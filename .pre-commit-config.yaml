@@ -1,0 +1,54 @@
+# Copyright (c) 2025 ADBC Drivers Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+repos:
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: 8a948e557ca98afa9489998ad0b85515964df9c4  # v0.12.0
+  hooks:
+    - id: ruff-check
+      name: "ruff check (isort)"
+      args: ["--select", "I", "--fix"]
+    - id: ruff-check
+      args: ["--fix"]
+    - id: ruff-format
+
+- repo: https://github.com/codespell-project/codespell
+  rev: 63c8f8312b7559622c0d82815639671ae42132ac  # v2.4.1
+  hooks:
+  - id: codespell
+    exclude: >
+        (?x)^(
+            .*go\.sum|
+            bigquery/LICENSE\.txt
+        )$
+
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # v5.0.0
+  hooks:
+  - id: check-added-large-files
+    args: ["--enforce-all"]
+  - id: check-case-conflict
+  - id: check-executables-have-shebangs
+  - id: check-yaml
+  - id: detect-private-key
+  - id: end-of-file-fixer
+  - id: mixed-line-ending
+    args: [--fix=lf]
+    exclude: '\.bat$'
+  - id: trailing-whitespace
+
+- repo: git@github.com:adbc-drivers/dev
+  rev: f5779f2109f177f7da6394d3427589a3a84eb521
+  hooks:
+  - id: rat
