@@ -30,6 +30,7 @@ repos:
     exclude: >
         (?x)^(
             .*go\.sum|
+            LICENSE\.txt|
             bigquery/LICENSE\.txt
         )$
 
