@@ -20,8 +20,8 @@
 
 {{ version_header|safe }}
 
-This driver provides access to [Trino][trino]{target="_blank"}, a free and
-open-source relational database management system.
+This driver provides access to [Trino][trino], a free and
+open-source distributed SQL query engine.
 
 ## Installation & Quickstart
 

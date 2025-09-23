@@ -13,6 +13,7 @@
 # limitations under the License.
 
 name = "ADBC Driver Foundry Driver for Trino"
+description = "An ADBC Driver for Trino developed by the ADBC Driver Foundry"
 publisher = "ADBC Drivers Contributors"
 license = "Apache-2.0"
 

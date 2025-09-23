@@ -24,7 +24,7 @@
 2. Set the environment variable:
 
    ```shell
-   export Trino_DSN="http://test@localhost:8080?catalog=memory&schema=default"
+   export TRINO_DSN="http://test@localhost:8080?catalog=memory&schema=default"
    ```
 3. Run the tests:
 
