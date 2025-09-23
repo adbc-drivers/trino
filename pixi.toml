@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2025 Columnar Technologies, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-<<<<<<< HEAD
-*/go.sum
-=======
-go.sum
->>>>>>> 757d927 (Initial commit for Trino ADBC driver)
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+[workspace]
+authors = ["ADBC Drivers Contributors"]
+channels = ["conda-forge"]
+name = "build"
+platforms = ["linux-64", "osx-arm64", "win-64", "linux-aarch64"]
+version = "0.1.0"
+
+[tasks]
+make = "adbc-make run build DRIVER=trino VERBOSE=true"
+release = "adbc-release"
+
+[dependencies]
+python = ">=3.13.5,<3.14"
+
+[pypi-dependencies]
+adbc-drivers-dev = { git = "ssh://git@github.com/adbc-drivers/dev", rev = "fe64eee5e66ddf6465460fd9ea0209550067757e" }

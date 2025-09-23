@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-<<<<<<< HEAD
-*/go.sum
-=======
-go.sum
->>>>>>> 757d927 (Initial commit for Trino ADBC driver)
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+from adbc_drivers_validation.tests.query import (
+    TestQuery,  # noqa: F401
+    generate_tests,
+)
+
+from . import trino
+
+
+def pytest_generate_tests(metafunc) -> None:
+    return generate_tests(trino.QUIRKS, metafunc)

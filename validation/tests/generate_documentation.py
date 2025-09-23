@@ -12,13 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-<<<<<<< HEAD
-*/go.sum
-=======
-go.sum
->>>>>>> 757d927 (Initial commit for Trino ADBC driver)
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+import argparse
+from pathlib import Path
+
+import adbc_drivers_validation.generate_documentation as generate_documentation
+
+from . import trino
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+
+    template = Path(__file__).parent.parent.parent / "docs/trino.md"
+    template = template.resolve()
+
+    generate_documentation.generate(
+        trino.QUIRKS,
+        Path("validation-report.xml").resolve(),
+        template,
+        args.output.resolve(),
+    )

@@ -1,0 +1,58 @@
+# Copyright (c) 2025 ADBC Drivers Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Release
+
+# We have to duplicate this workflow because it has access to the GitHub
+# token, so we only want it active on tag pushes.  Unfortunately that does
+# mean the build/test will happen twice.
+on:
+  push:
+    tags:
+      - "v**"
+
+permissions:
+  contents: write
+  id-token: write
+  packages: read
+
+jobs:
+  test:
+    uses: adbc-drivers/dev/.github/workflows/test.yaml@fe64eee5e66ddf6465460fd9ea0209550067757e
+    secrets:
+      dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
+      driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
+    with:
+      driver: trino
+      subdir: .
+
+  validate:
+    uses: adbc-drivers/dev/.github/workflows/validate.yaml@fe64eee5e66ddf6465460fd9ea0209550067757e
+    secrets:
+      dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
+      driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
+      validation_private_key: ${{ secrets.VALIDATION_DEPLOY_KEY }}
+    with:
+      driver: trino
+      subdir: .
+
+  release:
+    uses: adbc-drivers/dev/.github/workflows/release.yaml@fe64eee5e66ddf6465460fd9ea0209550067757e
+    needs:
+      - test
+      - validate
+    secrets:
+      dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
+    with:
+      driver: trino

@@ -12,13 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-<<<<<<< HEAD
-*/go.sum
-=======
-go.sum
->>>>>>> 757d927 (Initial commit for Trino ADBC driver)
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+ifeq ($(shell go env GOOS), linux)
+	RM=rm -f
+	PREFIX=lib
+	SUFFIX=so
+else ifeq ($(shell go env GOOS), darwin)
+	RM=rm -f
+	PREFIX=lib
+	SUFFIX=dylib
+else ifeq ($(shell go env GOOS), windows)
+	RM=del
+	PREFIX=
+	SUFFIX=dll
+else
+	$(error Unsupported OS)
+endif
+
+DRIVERS := \
+	libadbc_driver_trino.$(SUFFIX)
+
+.PHONY: all clean
+all: $(DRIVERS)
+
+clean:
+	$(RM) $(DRIVERS)
+
+libadbc_driver_trino.$(SUFFIX): $(wildcard *.go pkg/*.go pkg/*.c pkg/%.h) go.mod go.sum
+	go build -C ./pkg -o ../$@ -buildmode=c-shared -tags driverlib -ldflags "-s -w" .
+	-$(RM) ./$(basename $@).h
+	chmod 755 $@

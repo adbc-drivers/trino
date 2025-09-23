@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2025 Columnar Technologies, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-<<<<<<< HEAD
-*/go.sum
-=======
-go.sum
->>>>>>> 757d927 (Initial commit for Trino ADBC driver)
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+name: Issues Bot
+
+on:
+  issue_comment:
+    types:
+      - created
+      - edited
+
+permissions:
+  issues: write
+
+jobs:
+  issue_assign:
+    uses: adbc-drivers/dev/.github/workflows/dev_issues.yaml@08f8fca0626bb2311389ce1cacd7f614bb9c84c3

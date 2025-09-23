@@ -1,0 +1,571 @@
+// Copyright (c) 2025 ADBC Drivers Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//         http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package trino_test
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/adbc-drivers/driverbase-go/validation"
+	"github.com/apache/arrow-adbc/go/adbc"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/stretchr/testify/suite"
+
+	trino "github.com/adbc-drivers/trino"
+)
+
+// TrinoQuirks implements validation.DriverQuirks for Trino ADBC driver
+type TrinoQuirks struct {
+	dsn string
+	mem *memory.CheckedAllocator
+}
+
+func (q *TrinoQuirks) SetupDriver(t *testing.T) adbc.Driver {
+	q.mem = memory.NewCheckedAllocator(memory.DefaultAllocator)
+	return trino.NewDriver(q.mem)
+}
+
+func (q *TrinoQuirks) TearDownDriver(t *testing.T, _ adbc.Driver) {
+	q.mem.AssertSize(t, 0)
+}
+
+func (q *TrinoQuirks) DatabaseOptions() map[string]string {
+	return map[string]string{
+		adbc.OptionKeyURI: q.dsn,
+	}
+}
+
+func (q *TrinoQuirks) CreateSampleTable(tableName string, r arrow.RecordBatch) error {
+	// Use standard database/sql to create table directly
+	db, err := sql.Open("trino", q.dsn)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, db.Close())
+	}()
+
+	// Drop table if it exists first to ensure clean state
+	_, err = db.Exec("DROP TABLE IF EXISTS " + tableName)
+	if err != nil {
+		return fmt.Errorf("failed to drop existing table: %w", err)
+	}
+
+	// Build CREATE TABLE statement based on Arrow schema
+	var createQuery strings.Builder
+	createQuery.WriteString("CREATE TABLE ")
+	createQuery.WriteString(tableName)
+	createQuery.WriteString(" (")
+
+	schema := r.Schema()
+	for i, field := range schema.Fields() {
+		if i > 0 {
+			createQuery.WriteString(", ")
+		}
+		createQuery.WriteString(field.Name)
+		createQuery.WriteString(" ")
+
+		// Map Arrow types to Trino types
+		switch field.Type.ID() {
+		case arrow.INT32:
+			createQuery.WriteString("INT")
+		case arrow.INT64:
+			createQuery.WriteString("BIGINT")
+		case arrow.STRING:
+			createQuery.WriteString("VARCHAR(255)")
+		case arrow.FLOAT32:
+			createQuery.WriteString("FLOAT")
+		case arrow.FLOAT64:
+			createQuery.WriteString("DOUBLE")
+		case arrow.BOOL:
+			createQuery.WriteString("BOOLEAN")
+		default:
+			createQuery.WriteString("TEXT") // Default fallback
+		}
+
+		if !field.Nullable {
+			createQuery.WriteString(" NOT NULL")
+		}
+	}
+	createQuery.WriteString(")")
+
+	_, err = db.Exec(createQuery.String())
+	if err != nil {
+		return fmt.Errorf("failed to create table: %w", err)
+	}
+
+	// Insert data from Arrow record
+	if r.NumRows() > 0 {
+		// Insert each row separately to handle NULL values correctly
+		for row := range r.NumRows() {
+			var insertQuery strings.Builder
+			insertQuery.WriteString("INSERT INTO ")
+			insertQuery.WriteString(tableName)
+			insertQuery.WriteString(" VALUES (")
+
+			values := make([]interface{}, r.NumCols())
+			for col := range r.NumCols() {
+				column := r.Column(int(col))
+				if column.IsNull(int(row)) {
+					values[col] = nil
+				} else {
+					// Extract value based on column type
+					switch arr := column.(type) {
+					case *array.Int32:
+						values[col] = arr.Value(int(row))
+					case *array.Int64:
+						values[col] = arr.Value(int(row))
+					case *array.String:
+						values[col] = arr.Value(int(row))
+					case *array.Float32:
+						values[col] = arr.Value(int(row))
+					case *array.Float64:
+						values[col] = arr.Value(int(row))
+					case *array.Boolean:
+						values[col] = arr.Value(int(row))
+					default:
+						values[col] = fmt.Sprintf("%v", column)
+					}
+				}
+			}
+
+			// Build placeholders and collect non-null values for prepared statement
+			var queryParams []interface{}
+			for i, val := range values {
+				if i > 0 {
+					insertQuery.WriteString(", ")
+				}
+				if val == nil {
+					insertQuery.WriteString("NULL")
+				} else {
+					insertQuery.WriteString("?")
+					queryParams = append(queryParams, val)
+				}
+			}
+			insertQuery.WriteString(")")
+
+			_, err = db.Exec(insertQuery.String(), queryParams...)
+			if err != nil {
+				return fmt.Errorf("failed to insert row %d: %w", row, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (q *TrinoQuirks) DropTable(cnxn adbc.Connection, tblName string) error {
+	stmt, err := cnxn.NewStatement()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, stmt.Close())
+	}()
+
+	if err = stmt.SetSqlQuery("DROP TABLE IF EXISTS " + tblName); err != nil {
+		return err
+	}
+
+	_, err = stmt.ExecuteUpdate(context.Background())
+	return err
+}
+
+func (q *TrinoQuirks) SampleTableSchemaMetadata(tblName string, dt arrow.DataType) arrow.Metadata {
+	// Return metadata that matches what our Trino type converter actually returns
+	metadata := map[string]string{}
+
+	switch dt.ID() {
+	case arrow.INT32:
+		metadata["sql.column_name"] = "ints"
+		metadata["sql.database_type_name"] = "int"
+		metadata["sql.precision"] = "10"
+		metadata["sql.scale"] = "0"
+	case arrow.INT64:
+		metadata["sql.column_name"] = "ints"
+		metadata["sql.database_type_name"] = "bigint"
+		metadata["sql.precision"] = "19"
+		metadata["sql.scale"] = "0"
+	case arrow.STRING:
+		metadata["sql.column_name"] = "strings"
+		metadata["sql.database_type_name"] = "varchar"
+		metadata["sql.length"] = "255"
+	case arrow.FLOAT32:
+		metadata["sql.column_name"] = "floats"
+		metadata["sql.database_type_name"] = "float"
+	case arrow.FLOAT64:
+		metadata["sql.column_name"] = "doubles"
+		metadata["sql.database_type_name"] = "double"
+	case arrow.BOOL:
+		metadata["sql.column_name"] = "bools"
+		metadata["sql.database_type_name"] = "tinyint"
+	}
+
+	return arrow.MetadataFrom(metadata)
+}
+
+func (q *TrinoQuirks) Alloc() memory.Allocator      { return q.mem }
+func (q *TrinoQuirks) BindParameter(idx int) string { return "?" }
+
+// SupportsBulkIngest returns false because Trino doesn't support "NULLS LAST" syntax
+// used in the ADBC validation bulk ingest tests.
+// TODO: enable this once the validation framework is fixed.
+// Filed issue: https://github.com/adbc-drivers/driverbase-go/issues/69
+func (q *TrinoQuirks) SupportsBulkIngest(string) bool              { return false }
+func (q *TrinoQuirks) SupportsConcurrentStatements() bool          { return false }
+func (q *TrinoQuirks) SupportsCurrentCatalogSchema() bool          { return true }
+func (q *TrinoQuirks) SupportsExecuteSchema() bool                 { return true }
+func (q *TrinoQuirks) SupportsGetSetOptions() bool                 { return true }
+func (q *TrinoQuirks) SupportsPartitionedData() bool               { return false }
+func (q *TrinoQuirks) SupportsStatistics() bool                    { return false }
+func (q *TrinoQuirks) SupportsTransactions() bool                  { return false }
+func (q *TrinoQuirks) SupportsGetParameterSchema() bool            { return false }
+func (q *TrinoQuirks) SupportsDynamicParameterBinding() bool       { return true }
+func (q *TrinoQuirks) SupportsErrorIngestIncompatibleSchema() bool { return true }
+func (q *TrinoQuirks) Catalog() string                             { return "db" }
+func (q *TrinoQuirks) DBSchema() string                            { return "" }
+
+func (q *TrinoQuirks) GetMetadata(code adbc.InfoCode) interface{} {
+	switch code {
+	case adbc.InfoDriverName:
+		return "ADBC Driver Foundry Driver for Trino"
+	case adbc.InfoDriverVersion:
+		return "(unknown or development build)"
+	case adbc.InfoDriverArrowVersion:
+		return "(unknown or development build)"
+	case adbc.InfoVendorVersion:
+		return "Trino 476"
+	case adbc.InfoVendorArrowVersion:
+		return "(unknown or development build)"
+	case adbc.InfoDriverADBCVersion:
+		return adbc.AdbcVersion1_1_0
+	case adbc.InfoVendorName:
+		return "Trino"
+	case adbc.InfoVendorSql:
+		return true
+	case adbc.InfoVendorSubstrait:
+		return false
+	}
+	return nil
+}
+
+func withQuirks(t *testing.T, fn func(*TrinoQuirks)) {
+	dsn := os.Getenv("TRINO_DSN")
+	if dsn == "" {
+		t.Skip("Set TRINO_DSN environment variable for validation tests")
+	}
+
+	q := &TrinoQuirks{dsn: dsn}
+	fn(q)
+}
+
+type TrinoStatementTests struct {
+	validation.StatementTests
+}
+
+func (s *TrinoStatementTests) TestSqlIngestErrors() {
+	s.T().Skip()
+}
+
+// TestValidation runs the comprehensive ADBC validation test suite
+// This is the primary test that validates ADBC specification compliance
+func TestValidation(t *testing.T) {
+	withQuirks(t, func(q *TrinoQuirks) {
+		suite.Run(t, &validation.DatabaseTests{Quirks: q})
+		suite.Run(t, &validation.ConnectionTests{Quirks: q})
+		suite.Run(t, &validation.StatementTests{Quirks: q})
+	})
+}
+
+// -------------------- Additional Tests --------------------
+
+type TrinoTests struct {
+	suite.Suite
+
+	Quirks *TrinoQuirks
+
+	ctx    context.Context
+	driver adbc.Driver
+	db     adbc.Database
+	cnxn   adbc.Connection
+	stmt   adbc.Statement
+}
+
+func (s *TrinoTests) SetupTest() {
+	var err error
+	s.ctx = context.Background()
+	s.driver = s.Quirks.SetupDriver(s.T())
+	s.db, err = s.driver.NewDatabase(s.Quirks.DatabaseOptions())
+	s.NoError(err)
+	s.cnxn, err = s.db.Open(s.ctx)
+	s.NoError(err)
+	s.stmt, err = s.cnxn.NewStatement()
+	s.NoError(err)
+}
+
+func (s *TrinoTests) TearDownTest() {
+	s.NoError(s.stmt.Close())
+	s.NoError(s.cnxn.Close())
+	s.Quirks.TearDownDriver(s.T(), s.driver)
+	s.cnxn = nil
+	s.NoError(s.db.Close())
+	s.db = nil
+	s.driver = nil
+}
+
+type selectCase struct {
+	name     string
+	query    string
+	schema   *arrow.Schema
+	expected string
+}
+
+func (s *TrinoTests) TestSelect() {
+	// Create test table with basic Trino types
+	s.NoError(s.stmt.SetSqlQuery(`
+		CREATE TEMPORARY TABLE test_types (
+			bool_col TINYINT(1),
+			tinyint_col TINYINT,
+			int_col INT,
+			bigint_col BIGINT,
+			float_col FLOAT,
+			double_col DOUBLE,
+			varchar_col VARCHAR(100)
+		)
+	`))
+	_, err := s.stmt.ExecuteUpdate(s.ctx)
+	s.NoError(err)
+
+	// Insert test data
+	s.NoError(s.stmt.SetSqlQuery(`
+		INSERT INTO test_types VALUES (
+			1, 42, 12345, 9876543210, 3.25, 6.75, 'hello world'
+		)
+	`))
+	_, err = s.stmt.ExecuteUpdate(s.ctx)
+	s.NoError(err)
+
+	for _, testCase := range []selectCase{
+		{
+			name:  "boolean",
+			query: "SELECT bool_col AS istrue FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "istrue",
+					Type:     arrow.PrimitiveTypes.Int8,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "istrue",
+						"sql.database_type_name": "TINYINT",
+					}),
+				},
+			}, nil),
+			expected: `[{"istrue": 1}]`,
+		},
+		{
+			name:  "tinyint",
+			query: "SELECT tinyint_col AS value FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "value",
+					Type:     arrow.PrimitiveTypes.Int8,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "value",
+						"sql.database_type_name": "TINYINT",
+					}),
+				},
+			}, nil),
+			expected: `[{"value": 42}]`,
+		},
+		{
+			name:  "int32",
+			query: "SELECT int_col AS theanswer FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "theanswer",
+					Type:     arrow.PrimitiveTypes.Int32,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "theanswer",
+						"sql.database_type_name": "INT",
+					}),
+				},
+			}, nil),
+			expected: `[{"theanswer": 12345}]`,
+		},
+		{
+			name:  "int64",
+			query: "SELECT bigint_col AS theanswer FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "theanswer",
+					Type:     arrow.PrimitiveTypes.Int64,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "theanswer",
+						"sql.database_type_name": "BIGINT",
+					}),
+				},
+			}, nil),
+			expected: `[{"theanswer": 9876543210}]`,
+		},
+		{
+			name:  "float32",
+			query: "SELECT float_col AS value FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "value",
+					Type:     arrow.PrimitiveTypes.Float32,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "value",
+						"sql.database_type_name": "FLOAT",
+						"sql.precision":          "9223372036854775807",
+						"sql.scale":              "9223372036854775807",
+					}),
+				},
+			}, nil),
+			expected: `[{"value": 3.25}]`,
+		},
+		{
+			name:  "float64",
+			query: "SELECT double_col AS value FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "value",
+					Type:     arrow.PrimitiveTypes.Float64,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "value",
+						"sql.database_type_name": "DOUBLE",
+						"sql.precision":          "9223372036854775807",
+						"sql.scale":              "9223372036854775807",
+					}),
+				},
+			}, nil),
+			expected: `[{"value": 6.75}]`,
+		},
+		{
+			name:  "string",
+			query: "SELECT varchar_col AS greeting FROM test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "greeting",
+					Type:     arrow.BinaryTypes.String,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "greeting",
+						"sql.database_type_name": "VARCHAR",
+					}),
+				},
+			}, nil),
+			expected: `[{"greeting": "hello world"}]`,
+		},
+	} {
+		s.Run(testCase.name, func() {
+			s.NoError(s.stmt.SetSqlQuery(testCase.query))
+
+			rdr, rows, err := s.stmt.ExecuteQuery(s.ctx)
+			s.NoError(err)
+			defer rdr.Release()
+
+			s.Truef(testCase.schema.Equal(rdr.Schema()), "expected: %s\ngot: %s", testCase.schema, rdr.Schema())
+			s.Equal(int64(-1), rows)
+			s.Truef(rdr.Next(), "no record, error? %s", rdr.Err())
+
+			expectedRecord, _, err := array.RecordFromJSON(s.Quirks.Alloc(), testCase.schema, bytes.NewReader([]byte(testCase.expected)))
+			s.NoError(err)
+			defer expectedRecord.Release()
+
+			rec := rdr.RecordBatch()
+			s.NotNil(rec)
+
+			s.Truef(array.RecordEqual(expectedRecord, rec), "expected: %s\ngot: %s", expectedRecord, rec)
+
+			s.False(rdr.Next())
+			s.NoError(rdr.Err())
+		})
+	}
+}
+
+type TrinoTestSuite struct {
+	suite.Suite
+	dsn    string
+	mem    *memory.CheckedAllocator
+	ctx    context.Context
+	driver adbc.Driver
+	db     adbc.Database
+	cnxn   adbc.Connection
+	stmt   adbc.Statement
+}
+
+func (s *TrinoTestSuite) SetupSuite() {
+	var err error
+	s.dsn = os.Getenv("TRINO_DSN")
+	if s.dsn == "" {
+		s.T().Skip("Set TRINO_DSN environment variable")
+	}
+
+	s.ctx = context.Background()
+	s.mem = memory.NewCheckedAllocator(memory.DefaultAllocator)
+
+	s.driver = trino.NewDriver(s.mem)
+	s.db, err = s.driver.NewDatabase(map[string]string{
+		adbc.OptionKeyURI: s.dsn,
+	})
+	s.NoError(err)
+
+	s.cnxn, err = s.db.Open(s.ctx)
+	s.NoError(err)
+
+	s.stmt, err = s.cnxn.NewStatement()
+	s.NoError(err)
+}
+
+func (s *TrinoTestSuite) TearDownSuite() {
+	if s.stmt != nil {
+		s.NoError(s.stmt.Close())
+	}
+	if s.cnxn != nil {
+		s.NoError(s.cnxn.Close())
+	}
+	if s.db != nil {
+		s.NoError(s.db.Close())
+	}
+	s.mem.AssertSize(s.T(), 0)
+}
+
+func TestTrinoTypeTests(t *testing.T) {
+	dsn := os.Getenv("TRINO_DSN")
+	if dsn == "" {
+		t.Skip("Set TRINO_DSN environment variable for type tests")
+	}
+
+	quirks := &TrinoQuirks{dsn: dsn}
+	suite.Run(t, &TrinoTests{Quirks: quirks})
+}
+
+func TestTrinoIntegrationSuite(t *testing.T) {
+	suite.Run(t, new(TrinoTestSuite))
+}
