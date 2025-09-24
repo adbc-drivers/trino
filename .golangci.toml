@@ -12,9 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-go.sum
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+version = "2"
+
+[formatters]
+enable = [
+  "gofmt",
+]
+
+[issues]
+max-issues-per-linter = 0
+max-same-issues = 0
+uniq-by-line = false

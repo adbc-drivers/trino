@@ -12,9 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-go.sum
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+services:
+  test-service:
+    image: trinodb/trino:latest
+    environment:
+      TRINO_NODE_ENVIRONMENT: development
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8080/v1/info"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    ports:
+      - 8080:8080

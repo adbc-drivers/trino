@@ -12,9 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-go.sum
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+name: Dev
+
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    uses: adbc-drivers/dev/.github/workflows/dev.yaml@fe64eee5e66ddf6465460fd9ea0209550067757e
+    secrets:
+      pre_commit_ssh_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
+      ssh_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}

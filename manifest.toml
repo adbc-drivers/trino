@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-go.sum
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+name = "ADBC Driver Foundry Driver for Trino"
+description = "An ADBC Driver for Trino developed by the ADBC Driver Foundry"
+publisher = "ADBC Drivers Contributors"
+license = "Apache-2.0"
+
+[ADBC]
+version = "v1.1.0"

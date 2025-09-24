@@ -12,9 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-go.sum
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+[workspace]
+authors = ["ADBC Drivers Contributors"]
+channels = ["conda-forge"]
+name = "validation"
+platforms = ["linux-64", "osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+test = "pytest -vvs --junit-xml=validation-report.xml -rfEsxX tests/"
+gendocs = "python -m tests.generate_documentation"
+
+[dependencies]
+python = ">=3.13,<4"
+pytest-lazy-fixtures = ">=1.3.2,<2"
+
+[pypi-dependencies]
+adbc-drivers-validation = { git = "ssh://git@github.com/adbc-drivers/validation", rev = "db4b557881bb992e17a09538f9590f248e9fb90c" }

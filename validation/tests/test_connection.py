@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/pull_request_template.md
-go.sum
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+from adbc_drivers_validation.tests.connection import (
+    TestConnection,  # noqa: F401
+    generate_tests,
+)
+
+from . import trino
+
+
+def pytest_generate_tests(metafunc) -> None:
+    return generate_tests(trino.QUIRKS, metafunc)
