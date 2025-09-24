@@ -30,7 +30,7 @@ repos:
     exclude: >
         (?x)^(
             .*go\.sum|
-            bigquery/LICENSE\.txt
+            LICENSE\.txt
         )$
 
 - repo: https://github.com/pre-commit/pre-commit-hooks
