@@ -203,13 +203,10 @@ func (q *TrinoQuirks) SampleTableSchemaMetadata(tblName string, dt arrow.DataTyp
 		metadata["sql.scale"] = "0"
 	case arrow.INT64:
 		metadata["sql.column_name"] = "ints"
-		metadata["sql.database_type_name"] = "bigint"
-		metadata["sql.precision"] = "19"
-		metadata["sql.scale"] = "0"
+		metadata["sql.database_type_name"] = "BIGINT"
 	case arrow.STRING:
 		metadata["sql.column_name"] = "strings"
-		metadata["sql.database_type_name"] = "varchar"
-		metadata["sql.length"] = "255"
+		metadata["sql.database_type_name"] = "VARCHAR"
 	case arrow.FLOAT32:
 		metadata["sql.column_name"] = "floats"
 		metadata["sql.database_type_name"] = "float"
@@ -242,8 +239,8 @@ func (q *TrinoQuirks) SupportsTransactions() bool                  { return fals
 func (q *TrinoQuirks) SupportsGetParameterSchema() bool            { return false }
 func (q *TrinoQuirks) SupportsDynamicParameterBinding() bool       { return true }
 func (q *TrinoQuirks) SupportsErrorIngestIncompatibleSchema() bool { return true }
-func (q *TrinoQuirks) Catalog() string                             { return "db" }
-func (q *TrinoQuirks) DBSchema() string                            { return "" }
+func (q *TrinoQuirks) Catalog() string                             { return "memory" }
+func (q *TrinoQuirks) DBSchema() string                            { return "default" }
 
 func (q *TrinoQuirks) GetMetadata(code adbc.InfoCode) interface{} {
 	switch code {
@@ -341,26 +338,31 @@ type selectCase struct {
 }
 
 func (s *TrinoTests) TestSelect() {
-	// Create test table with basic Trino types
+	// Drop table if it exists first, then create test table with basic Trino types
+	s.NoError(s.stmt.SetSqlQuery(`DROP TABLE IF EXISTS memory.default.test_types`))
+	_, err := s.stmt.ExecuteUpdate(s.ctx)
+	s.NoError(err)
+
 	s.NoError(s.stmt.SetSqlQuery(`
-		CREATE TEMPORARY TABLE test_types (
-			bool_col TINYINT(1),
+		CREATE TABLE memory.default.test_types (
+			bool_col BOOLEAN,
 			tinyint_col TINYINT,
-			int_col INT,
+			int_col INTEGER,
 			bigint_col BIGINT,
-			float_col FLOAT,
+			float_col REAL,
 			double_col DOUBLE,
 			varchar_col VARCHAR(100)
 		)
 	`))
-	_, err := s.stmt.ExecuteUpdate(s.ctx)
+	_, err = s.stmt.ExecuteUpdate(s.ctx)
 	s.NoError(err)
 
-	// Insert test data
+	// Insert multiple rows including NULLs to test nullable behavior
 	s.NoError(s.stmt.SetSqlQuery(`
-		INSERT INTO test_types VALUES (
-			1, 42, 12345, 9876543210, 3.25, 6.75, 'hello world'
-		)
+		INSERT INTO memory.default.test_types VALUES
+			(true, 42, 12345, 9876543210, 3.25, 6.75, 'hello world'),
+			(false, NULL, 54321, NULL, 1.5, NULL, NULL),
+			(true, 100, 99999, 1234567890, 2.0, 8.5, 'test string')
 	`))
 	_, err = s.stmt.ExecuteUpdate(s.ctx)
 	s.NoError(err)
@@ -368,119 +370,118 @@ func (s *TrinoTests) TestSelect() {
 	for _, testCase := range []selectCase{
 		{
 			name:  "boolean",
-			query: "SELECT bool_col AS istrue FROM test_types",
+			query: "SELECT bool_col AS istrue FROM memory.default.test_types",
 			schema: arrow.NewSchema([]arrow.Field{
 				{
 					Name:     "istrue",
-					Type:     arrow.PrimitiveTypes.Int8,
-					Nullable: true,
+					Type:     arrow.FixedWidthTypes.Boolean,
+					// Trino doesn't support ColumnType.Nullable() and returns false for everything,
+					// therefore even though the column is nullable by default, it is returning false
+					Nullable: false,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "istrue",
-						"sql.database_type_name": "TINYINT",
+						"sql.database_type_name": "BOOLEAN",
 					}),
 				},
 			}, nil),
-			expected: `[{"istrue": 1}]`,
+			expected: `[{"istrue": true}, {"istrue": false}, {"istrue": true}]`,
 		},
 		{
 			name:  "tinyint",
-			query: "SELECT tinyint_col AS value FROM test_types",
+			query: "SELECT tinyint_col AS value FROM memory.default.test_types",
 			schema: arrow.NewSchema([]arrow.Field{
 				{
 					Name:     "value",
 					Type:     arrow.PrimitiveTypes.Int8,
-					Nullable: true,
+					Nullable: false,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "value",
 						"sql.database_type_name": "TINYINT",
 					}),
 				},
 			}, nil),
-			expected: `[{"value": 42}]`,
+			expected: `[{"value": 42}, {"value": null}, {"value": 100}]`,
 		},
 		{
 			name:  "int32",
-			query: "SELECT int_col AS theanswer FROM test_types",
+			query: "SELECT int_col AS theanswer FROM memory.default.test_types",
 			schema: arrow.NewSchema([]arrow.Field{
 				{
 					Name:     "theanswer",
 					Type:     arrow.PrimitiveTypes.Int32,
-					Nullable: true,
+					Nullable: false,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "theanswer",
-						"sql.database_type_name": "INT",
+						"sql.database_type_name": "INTEGER",
 					}),
 				},
 			}, nil),
-			expected: `[{"theanswer": 12345}]`,
+			expected: `[{"theanswer": 12345}, {"theanswer": 54321}, {"theanswer": 99999}]`,
 		},
 		{
 			name:  "int64",
-			query: "SELECT bigint_col AS theanswer FROM test_types",
+			query: "SELECT bigint_col AS theanswer FROM memory.default.test_types",
 			schema: arrow.NewSchema([]arrow.Field{
 				{
 					Name:     "theanswer",
 					Type:     arrow.PrimitiveTypes.Int64,
-					Nullable: true,
+					Nullable: false,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "theanswer",
 						"sql.database_type_name": "BIGINT",
 					}),
 				},
 			}, nil),
-			expected: `[{"theanswer": 9876543210}]`,
+			expected: `[{"theanswer": 9876543210}, {"theanswer": null}, {"theanswer": 1234567890}]`,
 		},
 		{
 			name:  "float32",
-			query: "SELECT float_col AS value FROM test_types",
+			query: "SELECT float_col AS value FROM memory.default.test_types",
 			schema: arrow.NewSchema([]arrow.Field{
 				{
 					Name:     "value",
 					Type:     arrow.PrimitiveTypes.Float32,
-					Nullable: true,
+					Nullable: false,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "value",
-						"sql.database_type_name": "FLOAT",
-						"sql.precision":          "9223372036854775807",
-						"sql.scale":              "9223372036854775807",
+						"sql.database_type_name": "REAL",
 					}),
 				},
 			}, nil),
-			expected: `[{"value": 3.25}]`,
+			expected: `[{"value": 3.25}, {"value": 1.5}, {"value": 2.0}]`,
 		},
 		{
 			name:  "float64",
-			query: "SELECT double_col AS value FROM test_types",
+			query: "SELECT double_col AS value FROM memory.default.test_types",
 			schema: arrow.NewSchema([]arrow.Field{
 				{
 					Name:     "value",
 					Type:     arrow.PrimitiveTypes.Float64,
-					Nullable: true,
+					Nullable: false,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "value",
 						"sql.database_type_name": "DOUBLE",
-						"sql.precision":          "9223372036854775807",
-						"sql.scale":              "9223372036854775807",
 					}),
 				},
 			}, nil),
-			expected: `[{"value": 6.75}]`,
+			expected: `[{"value": 6.75}, {"value": null}, {"value": 8.5}]`,
 		},
 		{
 			name:  "string",
-			query: "SELECT varchar_col AS greeting FROM test_types",
+			query: "SELECT varchar_col AS greeting FROM memory.default.test_types",
 			schema: arrow.NewSchema([]arrow.Field{
 				{
 					Name:     "greeting",
 					Type:     arrow.BinaryTypes.String,
-					Nullable: true,
+					Nullable: false,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "greeting",
 						"sql.database_type_name": "VARCHAR",
+						"sql.length":             "100",
 					}),
 				},
 			}, nil),
-			expected: `[{"greeting": "hello world"}]`,
+			expected: `[{"greeting": "hello world"}, {"greeting": null}, {"greeting": "test string"}]`,
 		},
 	} {
 		s.Run(testCase.name, func() {
@@ -488,7 +489,9 @@ func (s *TrinoTests) TestSelect() {
 
 			rdr, rows, err := s.stmt.ExecuteQuery(s.ctx)
 			s.NoError(err)
-			defer rdr.Release()
+			if rdr != nil {
+				defer rdr.Release()
+			}
 
 			s.Truef(testCase.schema.Equal(rdr.Schema()), "expected: %s\ngot: %s", testCase.schema, rdr.Schema())
 			s.Equal(int64(-1), rows)
