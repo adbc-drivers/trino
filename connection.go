@@ -193,6 +193,15 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	return arrow.NewSchema(fields, nil), nil
 }
 
+// ListTableTypes implements driverbase.TableTypeLister interface
+func (c *trinoConnectionImpl) ListTableTypes(ctx context.Context) ([]string, error) {
+	// Trino supports these standard table types
+	return []string{
+		"BASE TABLE", // Regular tables
+		"VIEW",       // Views
+	}, nil
+}
+
 
 // parseTrinoDataType extracts type name, precision and scale from Trino data type strings
 // Examples: "decimal(10,2)" -> ("DECIMAL", 10, 2), "time(6)" -> ("TIME", 6, nil), "timestamp(6) with time zone" -> ("TIMESTAMP WITH TIME ZONE", 6, nil)
