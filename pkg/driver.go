@@ -37,13 +37,13 @@ package main
 // typedef const uint32_t cuint32_t;
 // typedef const struct AdbcError ConstAdbcError;
 //
-// int MySQLArrayStreamGetSchema(struct ArrowArrayStream*, struct ArrowSchema*);
-// int MySQLArrayStreamGetNext(struct ArrowArrayStream*, struct ArrowArray*);
-// const char* MySQLArrayStreamGetLastError(struct ArrowArrayStream*);
-// void MySQLArrayStreamRelease(struct ArrowArrayStream*);
+// int TrinoArrayStreamGetSchema(struct ArrowArrayStream*, struct ArrowSchema*);
+// int TrinoArrayStreamGetNext(struct ArrowArrayStream*, struct ArrowArray*);
+// const char* TrinoArrayStreamGetLastError(struct ArrowArrayStream*);
+// void TrinoArrayStreamRelease(struct ArrowArrayStream*);
 //
-// int MySQLArrayStreamGetSchemaTrampoline(struct ArrowArrayStream*, struct ArrowSchema*);
-// int MySQLArrayStreamGetNextTrampoline(struct ArrowArrayStream*, struct ArrowArray*);
+// int TrinoArrayStreamGetSchemaTrampoline(struct ArrowArrayStream*, struct ArrowSchema*);
+// int TrinoArrayStreamGetNextTrampoline(struct ArrowArrayStream*, struct ArrowArray*);
 //
 // void releasePartitions(struct AdbcPartitions* partitions);
 //
@@ -74,8 +74,8 @@ var drv = trino.NewDriver(mallocator.NewMallocator())
 // since internal state of driver is unknown
 var globalPoison atomic.Bool
 
-const errPrefix = "[MySQL] "
-const logLevelEnvVar = "ADBC_DRIVER_MYSQL_LOG_LEVEL"
+const errPrefix = "[Trino] "
+const logLevelEnvVar = "ADBC_DRIVER_TRINO_LOG_LEVEL"
 
 func setErr(err *C.struct_AdbcError, format string, vals ...interface{}) {
 	if err == nil {
@@ -83,7 +83,7 @@ func setErr(err *C.struct_AdbcError, format string, vals ...interface{}) {
 	}
 
 	if err.release != nil {
-		C.MySQLerrRelease(err)
+		C.TrinoerrRelease(err)
 	}
 
 	var msg string
@@ -96,7 +96,7 @@ func setErr(err *C.struct_AdbcError, format string, vals ...interface{}) {
 		msg = errPrefix + fmt.Sprintf(format, vals...)
 	}
 	err.message = C.CString(msg)
-	err.release = (*[0]byte)(C.MySQL_release_error)
+	err.release = (*[0]byte)(C.Trino_release_error)
 }
 
 func setErrWithDetails(err *C.struct_AdbcError, adbcError adbc.Error) {
@@ -129,11 +129,11 @@ func setErrWithDetails(err *C.struct_AdbcError, adbcError adbc.Error) {
 		return
 	}
 
-	cErrPtr := C.calloc(C.sizeof_struct_MySQLError, C.size_t(1))
-	cErr := (*C.struct_MySQLError)(cErrPtr)
+	cErrPtr := C.calloc(C.sizeof_struct_TrinoError, C.size_t(1))
+	cErr := (*C.struct_TrinoError)(cErrPtr)
 	cErr.message = C.CString(adbcError.Msg)
 	err.message = cErr.message
-	err.release = (*[0]byte)(C.MySQLReleaseErrWithDetails)
+	err.release = (*[0]byte)(C.TrinoReleaseErrWithDetails)
 	err.private_data = cErrPtr
 
 	if numDetails > 0 {
@@ -188,9 +188,9 @@ func poison(err *C.struct_AdbcError, fname string, e interface{}) C.AdbcStatusCo
 		// Only print stack traces on the first occurrence
 		buf := make([]byte, 1<<20)
 		length := runtime.Stack(buf, true)
-		fmt.Fprintf(os.Stderr, "MySQL driver panicked, stack traces:\n%s", buf[:length])
+		fmt.Fprintf(os.Stderr, "Trino driver panicked, stack traces:\n%s", buf[:length])
 	}
-	setErr(err, "%s: Go panic in MySQL driver (see stderr): %#v", fname, e)
+	setErr(err, "%s: Go panic in Trino driver (see stderr): %#v", fname, e)
 	return C.ADBC_STATUS_INTERNAL
 }
 
@@ -222,14 +222,14 @@ func initLoggingFromEnv(db adbc.Database) {
 
 	ext, ok := db.(adbc.DatabaseLogging)
 	if !ok {
-		logger.Error("MySQL does not support logging")
+		logger.Error("Trino does not support logging")
 		return
 	}
 	ext.SetLogger(logger)
 }
 
 func printLoggingHelp() {
-	fmt.Fprintf(os.Stderr, "MySQL: to enable logging, set %s to 'debug', 'info', 'warn', or 'error'", logLevelEnvVar)
+	fmt.Fprintf(os.Stderr, "Trino: to enable logging, set %s to 'debug', 'info', 'warn', or 'error'", logLevelEnvVar)
 }
 
 
@@ -332,7 +332,7 @@ func (cStream *cArrayStream) maybeError() C.int {
 	err := cStream.rdr.Err()
 	if err != nil {
 		if cStream.adbcErr != nil {
-			C.MySQLerrRelease(cStream.adbcErr)
+			C.TrinoerrRelease(cStream.adbcErr)
 		} else {
 			cStream.adbcErr = (*C.struct_AdbcError)(C.calloc(1, C.ADBC_ERROR_1_1_0_SIZE))
 		}
@@ -374,9 +374,9 @@ func (cStream *cArrayStream) maybeError() C.int {
 	return 0
 }
 
-//export MySQLArrayStreamGetLastError
-func MySQLArrayStreamGetLastError(stream *C.struct_ArrowArrayStream) *C.cchar_t {
-	if stream == nil || stream.release != (*[0]byte)(C.MySQLArrayStreamRelease) || stream.private_data == nil {
+//export TrinoArrayStreamGetLastError
+func TrinoArrayStreamGetLastError(stream *C.struct_ArrowArrayStream) *C.cchar_t {
+	if stream == nil || stream.release != (*[0]byte)(C.TrinoArrayStreamRelease) || stream.private_data == nil {
 		return nil
 	}
 	cStream := getFromHandle[cArrayStream](stream.private_data)
@@ -386,14 +386,14 @@ func MySQLArrayStreamGetLastError(stream *C.struct_ArrowArrayStream) *C.cchar_t 
 	return nil
 }
 
-//export MySQLArrayStreamGetNext
-func MySQLArrayStreamGetNext(stream *C.struct_ArrowArrayStream, array *C.struct_ArrowArray) C.int {
-	if stream == nil || stream.release != (*[0]byte)(C.MySQLArrayStreamRelease) || stream.private_data == nil  {
+//export TrinoArrayStreamGetNext
+func TrinoArrayStreamGetNext(stream *C.struct_ArrowArrayStream, array *C.struct_ArrowArray) C.int {
+	if stream == nil || stream.release != (*[0]byte)(C.TrinoArrayStreamRelease) || stream.private_data == nil  {
 		return C.EINVAL
 	}
 	cStream := getFromHandle[cArrayStream](stream.private_data)
 	if cStream.rdr.Next() {
-		cdata.ExportArrowRecordBatch(cStream.rdr.Record(), toCdataArray(array), nil)
+		cdata.ExportArrowRecordBatch(cStream.rdr.RecordBatch(), toCdataArray(array), nil)
 		return 0;
 	}
 	array.release = nil
@@ -401,9 +401,9 @@ func MySQLArrayStreamGetNext(stream *C.struct_ArrowArrayStream, array *C.struct_
 	return cStream.maybeError()
 }
 
-//export MySQLArrayStreamGetSchema
-func MySQLArrayStreamGetSchema(stream *C.struct_ArrowArrayStream, schema *C.struct_ArrowSchema) C.int {
-	if stream == nil || stream.release != (*[0]byte)(C.MySQLArrayStreamRelease) || stream.private_data == nil  {
+//export TrinoArrayStreamGetSchema
+func TrinoArrayStreamGetSchema(stream *C.struct_ArrowArrayStream, schema *C.struct_ArrowSchema) C.int {
+	if stream == nil || stream.release != (*[0]byte)(C.TrinoArrayStreamRelease) || stream.private_data == nil  {
 		return C.EINVAL
 	}
 	cStream := getFromHandle[cArrayStream](stream.private_data)
@@ -415,9 +415,9 @@ func MySQLArrayStreamGetSchema(stream *C.struct_ArrowArrayStream, schema *C.stru
 	return 0
 }
 
-//export MySQLArrayStreamRelease
-func MySQLArrayStreamRelease(stream *C.struct_ArrowArrayStream) {
-	if stream == nil || stream.release != (*[0]byte)(C.MySQLArrayStreamRelease) || stream.private_data == nil  {
+//export TrinoArrayStreamRelease
+func TrinoArrayStreamRelease(stream *C.struct_ArrowArrayStream) {
+	if stream == nil || stream.release != (*[0]byte)(C.TrinoArrayStreamRelease) || stream.private_data == nil  {
 		return
 	}
 	h := (*(*cgo.Handle)(stream.private_data))
@@ -425,7 +425,7 @@ func MySQLArrayStreamRelease(stream *C.struct_ArrowArrayStream) {
 	cStream := h.Value().(*cArrayStream)
 	cStream.rdr.Release()
 	if cStream.adbcErr != nil {
-		C.MySQLerrRelease(cStream.adbcErr)
+		C.TrinoerrRelease(cStream.adbcErr)
 		C.free(unsafe.Pointer(cStream.adbcErr))
 	}
 	C.free(unsafe.Pointer(stream.private_data))
@@ -434,9 +434,9 @@ func MySQLArrayStreamRelease(stream *C.struct_ArrowArrayStream) {
 	runtime.GC()
 }
 
-//export MySQLErrorFromArrayStream
-func MySQLErrorFromArrayStream(stream *C.struct_ArrowArrayStream, status *C.AdbcStatusCode) (*C.struct_AdbcError) {
-	if stream == nil || stream.release != (*[0]byte)(C.MySQLArrayStreamRelease) || stream.private_data == nil  {
+//export TrinoErrorFromArrayStream
+func TrinoErrorFromArrayStream(stream *C.struct_ArrowArrayStream, status *C.AdbcStatusCode) (*C.struct_AdbcError) {
+	if stream == nil || stream.release != (*[0]byte)(C.TrinoArrayStreamRelease) || stream.private_data == nil  {
 		return nil
 	}
 	cStream := getFromHandle[cArrayStream](stream.private_data)
@@ -448,10 +448,10 @@ func MySQLErrorFromArrayStream(stream *C.struct_ArrowArrayStream, status *C.Adbc
 
 func exportRecordReader(rdr array.RecordReader, stream *C.struct_ArrowArrayStream) {
 	cStream := &cArrayStream{rdr: rdr, status: C.ADBC_STATUS_OK}
-	stream.get_last_error = (*[0]byte)(C.MySQLArrayStreamGetLastError)
-	stream.get_next = (*[0]byte)(C.MySQLArrayStreamGetNextTrampoline)
-	stream.get_schema = (*[0]byte)(C.MySQLArrayStreamGetSchemaTrampoline)
-	stream.release = (*[0]byte)(C.MySQLArrayStreamRelease)
+	stream.get_last_error = (*[0]byte)(C.TrinoArrayStreamGetLastError)
+	stream.get_next = (*[0]byte)(C.TrinoArrayStreamGetNextTrampoline)
+	stream.get_schema = (*[0]byte)(C.TrinoArrayStreamGetSchemaTrampoline)
+	stream.release = (*[0]byte)(C.TrinoArrayStreamRelease)
 	hndl := cgo.NewHandle(cStream)
 	stream.private_data = createHandle(hndl)
 	rdr.Retain()
@@ -462,8 +462,8 @@ type cDatabase struct {
 	db   adbc.Database
 }
 
-//export MySQLDatabaseGetOption
-func MySQLDatabaseGetOption(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.char, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseGetOption
+func TrinoDatabaseGetOption(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.char, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseGetOption", e)
@@ -487,8 +487,8 @@ func MySQLDatabaseGetOption(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.
 	return exportStringOption(val, value, length)
 }
 
-//export MySQLDatabaseGetOptionBytes
-func MySQLDatabaseGetOptionBytes(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.uint8_t, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseGetOptionBytes
+func TrinoDatabaseGetOptionBytes(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.uint8_t, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseGetOptionBytes", e)
@@ -512,8 +512,8 @@ func MySQLDatabaseGetOptionBytes(db *C.struct_AdbcDatabase, key *C.cchar_t, valu
 	return exportBytesOption(val, value, length)
 }
 
-//export MySQLDatabaseGetOptionDouble
-func MySQLDatabaseGetOptionDouble(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseGetOptionDouble
+func TrinoDatabaseGetOptionDouble(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseGetOptionDouble", e)
@@ -535,8 +535,8 @@ func MySQLDatabaseGetOptionDouble(db *C.struct_AdbcDatabase, key *C.cchar_t, val
 	return C.AdbcStatusCode(errToAdbcErr(err, e))
 }
 
-//export MySQLDatabaseGetOptionInt
-func MySQLDatabaseGetOptionInt(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseGetOptionInt
+func TrinoDatabaseGetOptionInt(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseGetOptionInt", e)
@@ -558,8 +558,8 @@ func MySQLDatabaseGetOptionInt(db *C.struct_AdbcDatabase, key *C.cchar_t, value 
 	return C.AdbcStatusCode(errToAdbcErr(err, e))
 }
 
-//export MySQLDatabaseInit
-func MySQLDatabaseInit(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseInit
+func TrinoDatabaseInit(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseInit", e)
@@ -586,8 +586,8 @@ func MySQLDatabaseInit(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLDatabaseNew
-func MySQLDatabaseNew(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseNew
+func TrinoDatabaseNew(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseNew", e)
@@ -607,8 +607,8 @@ func MySQLDatabaseNew(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code 
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLDatabaseRelease
-func MySQLDatabaseRelease(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseRelease
+func TrinoDatabaseRelease(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseInit", e)
@@ -640,8 +640,8 @@ func MySQLDatabaseRelease(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (c
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLDatabaseSetOption
-func MySQLDatabaseSetOption(db *C.struct_AdbcDatabase, key, value *C.cchar_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseSetOption
+func TrinoDatabaseSetOption(db *C.struct_AdbcDatabase, key, value *C.cchar_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseSetOption", e)
@@ -667,8 +667,8 @@ func MySQLDatabaseSetOption(db *C.struct_AdbcDatabase, key, value *C.cchar_t, er
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLDatabaseSetOptionBytes
-func MySQLDatabaseSetOptionBytes(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.cuint8_t, length C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseSetOptionBytes
+func TrinoDatabaseSetOptionBytes(db *C.struct_AdbcDatabase, key *C.cchar_t, value *C.cuint8_t, length C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseSetOptionBytes", e)
@@ -688,8 +688,8 @@ func MySQLDatabaseSetOptionBytes(db *C.struct_AdbcDatabase, key *C.cchar_t, valu
 	return C.AdbcStatusCode(errToAdbcErr(err, opts.SetOptionBytes(C.GoString(key), fromCArr[byte](value, int(length)))))
 }
 
-//export MySQLDatabaseSetOptionDouble
-func MySQLDatabaseSetOptionDouble(db *C.struct_AdbcDatabase, key *C.cchar_t, value C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseSetOptionDouble
+func TrinoDatabaseSetOptionDouble(db *C.struct_AdbcDatabase, key *C.cchar_t, value C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseSetOptionDouble", e)
@@ -709,8 +709,8 @@ func MySQLDatabaseSetOptionDouble(db *C.struct_AdbcDatabase, key *C.cchar_t, val
 	return C.AdbcStatusCode(errToAdbcErr(err, opts.SetOptionDouble(C.GoString(key), float64(value))))
 }
 
-//export MySQLDatabaseSetOptionInt
-func MySQLDatabaseSetOptionInt(db *C.struct_AdbcDatabase, key *C.cchar_t, value C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoDatabaseSetOptionInt
+func TrinoDatabaseSetOptionInt(db *C.struct_AdbcDatabase, key *C.cchar_t, value C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcDatabaseSetOptionInt", e)
@@ -766,8 +766,8 @@ func checkConnInit(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError, fname
 	return conn
 }
 
-//export MySQLConnectionGetOption
-func MySQLConnectionGetOption(db *C.struct_AdbcConnection, key *C.cchar_t, value *C.char, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionGetOption
+func TrinoConnectionGetOption(db *C.struct_AdbcConnection, key *C.cchar_t, value *C.char, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionGetOption", e)
@@ -791,8 +791,8 @@ func MySQLConnectionGetOption(db *C.struct_AdbcConnection, key *C.cchar_t, value
 	return exportStringOption(val, value, length)
 }
 
-//export MySQLConnectionGetOptionBytes
-func MySQLConnectionGetOptionBytes(db *C.struct_AdbcConnection, key *C.cchar_t, value *C.uint8_t, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionGetOptionBytes
+func TrinoConnectionGetOptionBytes(db *C.struct_AdbcConnection, key *C.cchar_t, value *C.uint8_t, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionGetOptionBytes", e)
@@ -816,8 +816,8 @@ func MySQLConnectionGetOptionBytes(db *C.struct_AdbcConnection, key *C.cchar_t, 
 	return exportBytesOption(val, value, length)
 }
 
-//export MySQLConnectionGetOptionDouble
-func MySQLConnectionGetOptionDouble(db *C.struct_AdbcConnection, key *C.cchar_t, value *C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionGetOptionDouble
+func TrinoConnectionGetOptionDouble(db *C.struct_AdbcConnection, key *C.cchar_t, value *C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionGetOptionDouble", e)
@@ -839,8 +839,8 @@ func MySQLConnectionGetOptionDouble(db *C.struct_AdbcConnection, key *C.cchar_t,
 	return C.AdbcStatusCode(errToAdbcErr(err, e))
 }
 
-//export MySQLConnectionGetOptionInt
-func MySQLConnectionGetOptionInt(db *C.struct_AdbcConnection, key *C.cchar_t, value *C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionGetOptionInt
+func TrinoConnectionGetOptionInt(db *C.struct_AdbcConnection, key *C.cchar_t, value *C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionGetOptionInt", e)
@@ -862,8 +862,8 @@ func MySQLConnectionGetOptionInt(db *C.struct_AdbcConnection, key *C.cchar_t, va
 	return C.AdbcStatusCode(errToAdbcErr(err, e))
 }
 
-//export MySQLConnectionNew
-func MySQLConnectionNew(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionNew
+func TrinoConnectionNew(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionNew", e)
@@ -883,8 +883,8 @@ func MySQLConnectionNew(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) 
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLConnectionSetOption
-func MySQLConnectionSetOption(cnxn *C.struct_AdbcConnection, key, val *C.cchar_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionSetOption
+func TrinoConnectionSetOption(cnxn *C.struct_AdbcConnection, key, val *C.cchar_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionSetOption", e)
@@ -913,8 +913,8 @@ func MySQLConnectionSetOption(cnxn *C.struct_AdbcConnection, key, val *C.cchar_t
 	return C.AdbcStatusCode(errToAdbcErr(err, opts.SetOption(C.GoString(key), C.GoString(val))))
 }
 
-//export MySQLConnectionSetOptionBytes
-func MySQLConnectionSetOptionBytes(db *C.struct_AdbcConnection, key *C.cchar_t, value *C.cuint8_t, length C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionSetOptionBytes
+func TrinoConnectionSetOptionBytes(db *C.struct_AdbcConnection, key *C.cchar_t, value *C.cuint8_t, length C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionSetOptionBytes", e)
@@ -934,8 +934,8 @@ func MySQLConnectionSetOptionBytes(db *C.struct_AdbcConnection, key *C.cchar_t, 
 	return C.AdbcStatusCode(errToAdbcErr(err, opts.SetOptionBytes(C.GoString(key), fromCArr[byte](value, int(length)))))
 }
 
-//export MySQLConnectionSetOptionDouble
-func MySQLConnectionSetOptionDouble(db *C.struct_AdbcConnection, key *C.cchar_t, value C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionSetOptionDouble
+func TrinoConnectionSetOptionDouble(db *C.struct_AdbcConnection, key *C.cchar_t, value C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionSetOptionDouble", e)
@@ -955,8 +955,8 @@ func MySQLConnectionSetOptionDouble(db *C.struct_AdbcConnection, key *C.cchar_t,
 	return C.AdbcStatusCode(errToAdbcErr(err, opts.SetOptionDouble(C.GoString(key), float64(value))))
 }
 
-//export MySQLConnectionSetOptionInt
-func MySQLConnectionSetOptionInt(db *C.struct_AdbcConnection, key *C.cchar_t, value C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionSetOptionInt
+func TrinoConnectionSetOptionInt(db *C.struct_AdbcConnection, key *C.cchar_t, value C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionSetOptionInt", e)
@@ -976,8 +976,8 @@ func MySQLConnectionSetOptionInt(db *C.struct_AdbcConnection, key *C.cchar_t, va
 	return C.AdbcStatusCode(errToAdbcErr(err, opts.SetOptionInt(C.GoString(key), int64(value))))
 }
 
-//export MySQLConnectionInit
-func MySQLConnectionInit(cnxn *C.struct_AdbcConnection, db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionInit
+func TrinoConnectionInit(cnxn *C.struct_AdbcConnection, db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionInit", e)
@@ -1022,8 +1022,8 @@ func MySQLConnectionInit(cnxn *C.struct_AdbcConnection, db *C.struct_AdbcDatabas
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLConnectionRelease
-func MySQLConnectionRelease(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionRelease
+func TrinoConnectionRelease(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionRelease", e)
@@ -1075,8 +1075,8 @@ func toCdataArray(ptr *C.struct_ArrowArray) *cdata.CArrowArray {
 	return (*cdata.CArrowArray)(unsafe.Pointer(ptr))
 }
 
-//export MySQLConnectionCancel
-func MySQLConnectionCancel(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionCancel
+func TrinoConnectionCancel(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionCancel", e)
@@ -1115,8 +1115,8 @@ func toStrSlice(in **C.cchar_t) []string {
 	return out
 }
 
-//export MySQLConnectionGetInfo
-func MySQLConnectionGetInfo(cnxn *C.struct_AdbcConnection, codes *C.cuint32_t, len C.size_t, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionGetInfo
+func TrinoConnectionGetInfo(cnxn *C.struct_AdbcConnection, codes *C.cuint32_t, len C.size_t, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionGetInfo", e)
@@ -1138,8 +1138,8 @@ func MySQLConnectionGetInfo(cnxn *C.struct_AdbcConnection, codes *C.cuint32_t, l
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLConnectionGetObjects
-func MySQLConnectionGetObjects(cnxn *C.struct_AdbcConnection, depth C.int, catalog, dbSchema, tableName *C.cchar_t, tableType **C.cchar_t, columnName *C.cchar_t,
+//export TrinoConnectionGetObjects
+func TrinoConnectionGetObjects(cnxn *C.struct_AdbcConnection, depth C.int, catalog, dbSchema, tableName *C.cchar_t, tableType **C.cchar_t, columnName *C.cchar_t,
 	out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
@@ -1160,8 +1160,8 @@ func MySQLConnectionGetObjects(cnxn *C.struct_AdbcConnection, depth C.int, catal
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLConnectionGetStatistics
-func MySQLConnectionGetStatistics(cnxn *C.struct_AdbcConnection, catalog, dbSchema, tableName *C.cchar_t, approximate C.char, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionGetStatistics
+func TrinoConnectionGetStatistics(cnxn *C.struct_AdbcConnection, catalog, dbSchema, tableName *C.cchar_t, approximate C.char, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionGetStatistics", e)
@@ -1188,8 +1188,8 @@ func MySQLConnectionGetStatistics(cnxn *C.struct_AdbcConnection, catalog, dbSche
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLConnectionGetStatisticNames
-func MySQLConnectionGetStatisticNames(cnxn *C.struct_AdbcConnection, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionGetStatisticNames
+func TrinoConnectionGetStatisticNames(cnxn *C.struct_AdbcConnection, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionGetStatistics", e)
@@ -1215,8 +1215,8 @@ func MySQLConnectionGetStatisticNames(cnxn *C.struct_AdbcConnection, out *C.stru
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLConnectionGetTableSchema
-func MySQLConnectionGetTableSchema(cnxn *C.struct_AdbcConnection, catalog, dbSchema, tableName *C.cchar_t, schema *C.struct_ArrowSchema, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionGetTableSchema
+func TrinoConnectionGetTableSchema(cnxn *C.struct_AdbcConnection, catalog, dbSchema, tableName *C.cchar_t, schema *C.struct_ArrowSchema, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionGetTableSchema", e)
@@ -1235,8 +1235,8 @@ func MySQLConnectionGetTableSchema(cnxn *C.struct_AdbcConnection, catalog, dbSch
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLConnectionGetTableTypes
-func MySQLConnectionGetTableTypes(cnxn *C.struct_AdbcConnection, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionGetTableTypes
+func TrinoConnectionGetTableTypes(cnxn *C.struct_AdbcConnection, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionGetTableTypes", e)
@@ -1256,8 +1256,8 @@ func MySQLConnectionGetTableTypes(cnxn *C.struct_AdbcConnection, out *C.struct_A
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLConnectionReadPartition
-func MySQLConnectionReadPartition(cnxn *C.struct_AdbcConnection, serialized *C.cuint8_t, serializedLen C.size_t, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionReadPartition
+func TrinoConnectionReadPartition(cnxn *C.struct_AdbcConnection, serialized *C.cuint8_t, serializedLen C.size_t, out *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionReadPartition", e)
@@ -1277,8 +1277,8 @@ func MySQLConnectionReadPartition(cnxn *C.struct_AdbcConnection, serialized *C.c
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLConnectionCommit
-func MySQLConnectionCommit(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionCommit
+func TrinoConnectionCommit(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionCommit", e)
@@ -1292,8 +1292,8 @@ func MySQLConnectionCommit(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcErro
 	return C.AdbcStatusCode(errToAdbcErr(err, conn.cnxn.Commit(conn.newContext())))
 }
 
-//export MySQLConnectionRollback
-func MySQLConnectionRollback(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoConnectionRollback
+func TrinoConnectionRollback(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcConnectionRollback", e)
@@ -1341,8 +1341,8 @@ func checkStmtInit(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError, fname 
 	return cStmt
 }
 
-//export MySQLStatementGetOption
-func MySQLStatementGetOption(db *C.struct_AdbcStatement, key *C.cchar_t, value *C.char, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementGetOption
+func TrinoStatementGetOption(db *C.struct_AdbcStatement, key *C.cchar_t, value *C.char, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementGetOption", e)
@@ -1366,8 +1366,8 @@ func MySQLStatementGetOption(db *C.struct_AdbcStatement, key *C.cchar_t, value *
 	return exportStringOption(val, value, length)
 }
 
-//export MySQLStatementGetOptionBytes
-func MySQLStatementGetOptionBytes(db *C.struct_AdbcStatement, key *C.cchar_t, value *C.uint8_t, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementGetOptionBytes
+func TrinoStatementGetOptionBytes(db *C.struct_AdbcStatement, key *C.cchar_t, value *C.uint8_t, length *C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementGetOptionBytes", e)
@@ -1391,8 +1391,8 @@ func MySQLStatementGetOptionBytes(db *C.struct_AdbcStatement, key *C.cchar_t, va
 	return exportBytesOption(val, value, length)
 }
 
-//export MySQLStatementGetOptionDouble
-func MySQLStatementGetOptionDouble(db *C.struct_AdbcStatement, key *C.cchar_t, value *C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementGetOptionDouble
+func TrinoStatementGetOptionDouble(db *C.struct_AdbcStatement, key *C.cchar_t, value *C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementGetOptionDouble", e)
@@ -1414,8 +1414,8 @@ func MySQLStatementGetOptionDouble(db *C.struct_AdbcStatement, key *C.cchar_t, v
 	return C.AdbcStatusCode(errToAdbcErr(err, e))
 }
 
-//export MySQLStatementGetOptionInt
-func MySQLStatementGetOptionInt(db *C.struct_AdbcStatement, key *C.cchar_t, value *C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementGetOptionInt
+func TrinoStatementGetOptionInt(db *C.struct_AdbcStatement, key *C.cchar_t, value *C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementGetOptionInt", e)
@@ -1437,8 +1437,8 @@ func MySQLStatementGetOptionInt(db *C.struct_AdbcStatement, key *C.cchar_t, valu
 	return C.AdbcStatusCode(errToAdbcErr(err, e))
 }
 
-//export MySQLStatementNew
-func MySQLStatementNew(cnxn *C.struct_AdbcConnection, stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementNew
+func TrinoStatementNew(cnxn *C.struct_AdbcConnection, stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementNew", e)
@@ -1468,8 +1468,8 @@ func MySQLStatementNew(cnxn *C.struct_AdbcConnection, stmt *C.struct_AdbcStateme
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLStatementRelease
-func MySQLStatementRelease(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementRelease
+func TrinoStatementRelease(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementRelease", e)
@@ -1505,8 +1505,8 @@ func MySQLStatementRelease(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError
 	return C.AdbcStatusCode(errToAdbcErr(err, st.stmt.Close()))
 }
 
-//export MySQLStatementCancel
-func MySQLStatementCancel(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementCancel
+func TrinoStatementCancel(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementCancel", e)
@@ -1521,8 +1521,8 @@ func MySQLStatementCancel(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError)
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLStatementPrepare
-func MySQLStatementPrepare(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementPrepare
+func TrinoStatementPrepare(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementPrepare", e)
@@ -1536,8 +1536,8 @@ func MySQLStatementPrepare(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError
 	return C.AdbcStatusCode(errToAdbcErr(err, st.stmt.Prepare(st.newContext())))
 }
 
-//export MySQLStatementExecuteQuery
-func MySQLStatementExecuteQuery(stmt *C.struct_AdbcStatement, out *C.struct_ArrowArrayStream, affected *C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementExecuteQuery
+func TrinoStatementExecuteQuery(stmt *C.struct_AdbcStatement, out *C.struct_ArrowArrayStream, affected *C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementExecuteQuery", e)
@@ -1573,8 +1573,8 @@ func MySQLStatementExecuteQuery(stmt *C.struct_AdbcStatement, out *C.struct_Arro
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLStatementExecuteSchema
-func MySQLStatementExecuteSchema(stmt *C.struct_AdbcStatement, schema *C.struct_ArrowSchema, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementExecuteSchema
+func TrinoStatementExecuteSchema(stmt *C.struct_AdbcStatement, schema *C.struct_ArrowSchema, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementExecuteQuery", e)
@@ -1600,8 +1600,8 @@ func MySQLStatementExecuteSchema(stmt *C.struct_AdbcStatement, schema *C.struct_
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLStatementSetSqlQuery
-func MySQLStatementSetSqlQuery(stmt *C.struct_AdbcStatement, query *C.cchar_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementSetSqlQuery
+func TrinoStatementSetSqlQuery(stmt *C.struct_AdbcStatement, query *C.cchar_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementSetSqlQuery", e)
@@ -1615,8 +1615,8 @@ func MySQLStatementSetSqlQuery(stmt *C.struct_AdbcStatement, query *C.cchar_t, e
 	return C.AdbcStatusCode(errToAdbcErr(err, st.stmt.SetSqlQuery(C.GoString(query))))
 }
 
-//export MySQLStatementSetSubstraitPlan
-func MySQLStatementSetSubstraitPlan(stmt *C.struct_AdbcStatement, plan *C.cuint8_t, length C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementSetSubstraitPlan
+func TrinoStatementSetSubstraitPlan(stmt *C.struct_AdbcStatement, plan *C.cuint8_t, length C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementSetSubstraitPlan", e)
@@ -1630,8 +1630,8 @@ func MySQLStatementSetSubstraitPlan(stmt *C.struct_AdbcStatement, plan *C.cuint8
 	return C.AdbcStatusCode(errToAdbcErr(err, st.stmt.SetSubstraitPlan(fromCArr[byte](plan, int(length)))))
 }
 
-//export MySQLStatementBind
-func MySQLStatementBind(stmt *C.struct_AdbcStatement, values *C.struct_ArrowArray, schema *C.struct_ArrowSchema, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementBind
+func TrinoStatementBind(stmt *C.struct_AdbcStatement, values *C.struct_ArrowArray, schema *C.struct_ArrowSchema, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementBind", e)
@@ -1653,8 +1653,8 @@ func MySQLStatementBind(stmt *C.struct_AdbcStatement, values *C.struct_ArrowArra
 	return C.AdbcStatusCode(errToAdbcErr(err, st.stmt.Bind(st.newContext(), rec)))
 }
 
-//export MySQLStatementBindStream
-func MySQLStatementBindStream(stmt *C.struct_AdbcStatement, stream *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementBindStream
+func TrinoStatementBindStream(stmt *C.struct_AdbcStatement, stream *C.struct_ArrowArrayStream, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementBindStream", e)
@@ -1672,8 +1672,8 @@ func MySQLStatementBindStream(stmt *C.struct_AdbcStatement, stream *C.struct_Arr
 	return C.AdbcStatusCode(errToAdbcErr(err, st.stmt.BindStream(st.newContext(), rdr.(array.RecordReader))))
 }
 
-//export MySQLStatementGetParameterSchema
-func MySQLStatementGetParameterSchema(stmt *C.struct_AdbcStatement, schema *C.struct_ArrowSchema, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementGetParameterSchema
+func TrinoStatementGetParameterSchema(stmt *C.struct_AdbcStatement, schema *C.struct_ArrowSchema, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementGetParameterSchema", e)
@@ -1693,8 +1693,8 @@ func MySQLStatementGetParameterSchema(stmt *C.struct_AdbcStatement, schema *C.st
 	return C.ADBC_STATUS_OK
 }
 
-//export MySQLStatementSetOption
-func MySQLStatementSetOption(stmt *C.struct_AdbcStatement, key, value *C.cchar_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementSetOption
+func TrinoStatementSetOption(stmt *C.struct_AdbcStatement, key, value *C.cchar_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementSetOption", e)
@@ -1708,8 +1708,8 @@ func MySQLStatementSetOption(stmt *C.struct_AdbcStatement, key, value *C.cchar_t
 	return C.AdbcStatusCode(errToAdbcErr(err, st.stmt.SetOption(C.GoString(key), C.GoString(value))))
 }
 
-//export MySQLStatementSetOptionBytes
-func MySQLStatementSetOptionBytes(db *C.struct_AdbcStatement, key *C.cchar_t, value *C.cuint8_t, length C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementSetOptionBytes
+func TrinoStatementSetOptionBytes(db *C.struct_AdbcStatement, key *C.cchar_t, value *C.cuint8_t, length C.size_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementSetOptionBytes", e)
@@ -1729,8 +1729,8 @@ func MySQLStatementSetOptionBytes(db *C.struct_AdbcStatement, key *C.cchar_t, va
 	return C.AdbcStatusCode(errToAdbcErr(err, opts.SetOptionBytes(C.GoString(key), fromCArr[byte](value, int(length)))))
 }
 
-//export MySQLStatementSetOptionDouble
-func MySQLStatementSetOptionDouble(db *C.struct_AdbcStatement, key *C.cchar_t, value C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementSetOptionDouble
+func TrinoStatementSetOptionDouble(db *C.struct_AdbcStatement, key *C.cchar_t, value C.double, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementSetOptionDouble", e)
@@ -1750,8 +1750,8 @@ func MySQLStatementSetOptionDouble(db *C.struct_AdbcStatement, key *C.cchar_t, v
 	return C.AdbcStatusCode(errToAdbcErr(err, opts.SetOptionDouble(C.GoString(key), float64(value))))
 }
 
-//export MySQLStatementSetOptionInt
-func MySQLStatementSetOptionInt(db *C.struct_AdbcStatement, key *C.cchar_t, value C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementSetOptionInt
+func TrinoStatementSetOptionInt(db *C.struct_AdbcStatement, key *C.cchar_t, value C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementSetOptionInt", e)
@@ -1785,8 +1785,8 @@ func releasePartitions(partitions *C.struct_AdbcPartitions) {
 	partitions.private_data = nil
 }
 
-//export MySQLStatementExecutePartitions
-func MySQLStatementExecutePartitions(stmt *C.struct_AdbcStatement, schema *C.struct_ArrowSchema, partitions *C.struct_AdbcPartitions, affected *C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
+//export TrinoStatementExecutePartitions
+func TrinoStatementExecutePartitions(stmt *C.struct_AdbcStatement, schema *C.struct_ArrowSchema, partitions *C.struct_AdbcPartitions, affected *C.int64_t, err *C.struct_AdbcError) (code C.AdbcStatusCode) {
 	defer func() {
 		if e := recover(); e != nil {
 			code = poison(err, "AdbcStatementExecutePartitions", e)
@@ -1840,8 +1840,8 @@ func MySQLStatementExecutePartitions(stmt *C.struct_AdbcStatement, schema *C.str
 	return C.ADBC_STATUS_OK
 }
 
-//export AdbcDriverMySQLInit
-func AdbcDriverMySQLInit(version C.int, rawDriver *C.void, err *C.struct_AdbcError) C.AdbcStatusCode {
+//export AdbcDriverTrinoInit
+func AdbcDriverTrinoInit(version C.int, rawDriver *C.void, err *C.struct_AdbcError) C.AdbcStatusCode {
 	driver := (*C.struct_AdbcDriver)(unsafe.Pointer(rawDriver))
 
 	switch version {
@@ -1856,68 +1856,68 @@ func AdbcDriverMySQLInit(version C.int, rawDriver *C.void, err *C.struct_AdbcErr
 		return C.ADBC_STATUS_NOT_IMPLEMENTED
 	}
 
-	driver.DatabaseInit = (*[0]byte)(C.MySQLDatabaseInit)
-	driver.DatabaseNew = (*[0]byte)(C.MySQLDatabaseNew)
-	driver.DatabaseRelease = (*[0]byte)(C.MySQLDatabaseRelease)
-	driver.DatabaseSetOption = (*[0]byte)(C.MySQLDatabaseSetOption)
+	driver.DatabaseInit = (*[0]byte)(C.TrinoDatabaseInit)
+	driver.DatabaseNew = (*[0]byte)(C.TrinoDatabaseNew)
+	driver.DatabaseRelease = (*[0]byte)(C.TrinoDatabaseRelease)
+	driver.DatabaseSetOption = (*[0]byte)(C.TrinoDatabaseSetOption)
 
-	driver.ConnectionNew = (*[0]byte)(C.MySQLConnectionNew)
-	driver.ConnectionInit = (*[0]byte)(C.MySQLConnectionInit)
-	driver.ConnectionRelease = (*[0]byte)(C.MySQLConnectionRelease)
-	driver.ConnectionSetOption = (*[0]byte)(C.MySQLConnectionSetOption)
-	driver.ConnectionGetInfo = (*[0]byte)(C.MySQLConnectionGetInfo)
-	driver.ConnectionGetObjects = (*[0]byte)(C.MySQLConnectionGetObjects)
-	driver.ConnectionGetTableSchema = (*[0]byte)(C.MySQLConnectionGetTableSchema)
-	driver.ConnectionGetTableTypes = (*[0]byte)(C.MySQLConnectionGetTableTypes)
-	driver.ConnectionReadPartition = (*[0]byte)(C.MySQLConnectionReadPartition)
-	driver.ConnectionCommit = (*[0]byte)(C.MySQLConnectionCommit)
-	driver.ConnectionRollback = (*[0]byte)(C.MySQLConnectionRollback)
+	driver.ConnectionNew = (*[0]byte)(C.TrinoConnectionNew)
+	driver.ConnectionInit = (*[0]byte)(C.TrinoConnectionInit)
+	driver.ConnectionRelease = (*[0]byte)(C.TrinoConnectionRelease)
+	driver.ConnectionSetOption = (*[0]byte)(C.TrinoConnectionSetOption)
+	driver.ConnectionGetInfo = (*[0]byte)(C.TrinoConnectionGetInfo)
+	driver.ConnectionGetObjects = (*[0]byte)(C.TrinoConnectionGetObjects)
+	driver.ConnectionGetTableSchema = (*[0]byte)(C.TrinoConnectionGetTableSchema)
+	driver.ConnectionGetTableTypes = (*[0]byte)(C.TrinoConnectionGetTableTypes)
+	driver.ConnectionReadPartition = (*[0]byte)(C.TrinoConnectionReadPartition)
+	driver.ConnectionCommit = (*[0]byte)(C.TrinoConnectionCommit)
+	driver.ConnectionRollback = (*[0]byte)(C.TrinoConnectionRollback)
 
-	driver.StatementNew = (*[0]byte)(C.MySQLStatementNew)
-	driver.StatementRelease = (*[0]byte)(C.MySQLStatementRelease)
-	driver.StatementSetOption = (*[0]byte)(C.MySQLStatementSetOption)
-	driver.StatementSetSqlQuery = (*[0]byte)(C.MySQLStatementSetSqlQuery)
-	driver.StatementSetSubstraitPlan = (*[0]byte)(C.MySQLStatementSetSubstraitPlan)
-	driver.StatementBind = (*[0]byte)(C.MySQLStatementBind)
-	driver.StatementBindStream = (*[0]byte)(C.MySQLStatementBindStream)
-	driver.StatementExecuteQuery = (*[0]byte)(C.MySQLStatementExecuteQuery)
-	driver.StatementExecutePartitions = (*[0]byte)(C.MySQLStatementExecutePartitions)
-	driver.StatementGetParameterSchema = (*[0]byte)(C.MySQLStatementGetParameterSchema)
-	driver.StatementPrepare = (*[0]byte)(C.MySQLStatementPrepare)
+	driver.StatementNew = (*[0]byte)(C.TrinoStatementNew)
+	driver.StatementRelease = (*[0]byte)(C.TrinoStatementRelease)
+	driver.StatementSetOption = (*[0]byte)(C.TrinoStatementSetOption)
+	driver.StatementSetSqlQuery = (*[0]byte)(C.TrinoStatementSetSqlQuery)
+	driver.StatementSetSubstraitPlan = (*[0]byte)(C.TrinoStatementSetSubstraitPlan)
+	driver.StatementBind = (*[0]byte)(C.TrinoStatementBind)
+	driver.StatementBindStream = (*[0]byte)(C.TrinoStatementBindStream)
+	driver.StatementExecuteQuery = (*[0]byte)(C.TrinoStatementExecuteQuery)
+	driver.StatementExecutePartitions = (*[0]byte)(C.TrinoStatementExecutePartitions)
+	driver.StatementGetParameterSchema = (*[0]byte)(C.TrinoStatementGetParameterSchema)
+	driver.StatementPrepare = (*[0]byte)(C.TrinoStatementPrepare)
 
 	if version == C.ADBC_VERSION_1_1_0 {
-		driver.ErrorGetDetailCount = (*[0]byte)(C.MySQLErrorGetDetailCount)
-		driver.ErrorGetDetail = (*[0]byte)(C.MySQLErrorGetDetail)
-		driver.ErrorFromArrayStream = (*[0]byte)(C.MySQLErrorFromArrayStream)
+		driver.ErrorGetDetailCount = (*[0]byte)(C.TrinoErrorGetDetailCount)
+		driver.ErrorGetDetail = (*[0]byte)(C.TrinoErrorGetDetail)
+		driver.ErrorFromArrayStream = (*[0]byte)(C.TrinoErrorFromArrayStream)
 
-		driver.DatabaseGetOption = (*[0]byte)(C.MySQLDatabaseGetOption)
-		driver.DatabaseGetOptionBytes = (*[0]byte)(C.MySQLDatabaseGetOptionBytes)
-		driver.DatabaseGetOptionDouble = (*[0]byte)(C.MySQLDatabaseGetOptionDouble)
-		driver.DatabaseGetOptionInt = (*[0]byte)(C.MySQLDatabaseGetOptionInt)
-		driver.DatabaseSetOptionBytes = (*[0]byte)(C.MySQLDatabaseSetOptionBytes)
-		driver.DatabaseSetOptionDouble = (*[0]byte)(C.MySQLDatabaseSetOptionDouble)
-		driver.DatabaseSetOptionInt = (*[0]byte)(C.MySQLDatabaseSetOptionInt)
+		driver.DatabaseGetOption = (*[0]byte)(C.TrinoDatabaseGetOption)
+		driver.DatabaseGetOptionBytes = (*[0]byte)(C.TrinoDatabaseGetOptionBytes)
+		driver.DatabaseGetOptionDouble = (*[0]byte)(C.TrinoDatabaseGetOptionDouble)
+		driver.DatabaseGetOptionInt = (*[0]byte)(C.TrinoDatabaseGetOptionInt)
+		driver.DatabaseSetOptionBytes = (*[0]byte)(C.TrinoDatabaseSetOptionBytes)
+		driver.DatabaseSetOptionDouble = (*[0]byte)(C.TrinoDatabaseSetOptionDouble)
+		driver.DatabaseSetOptionInt = (*[0]byte)(C.TrinoDatabaseSetOptionInt)
 
-		driver.ConnectionCancel = (*[0]byte)(C.MySQLConnectionCancel)
-		driver.ConnectionGetOption = (*[0]byte)(C.MySQLConnectionGetOption)
-		driver.ConnectionGetOptionBytes = (*[0]byte)(C.MySQLConnectionGetOptionBytes)
-		driver.ConnectionGetOptionDouble = (*[0]byte)(C.MySQLConnectionGetOptionDouble)
-		driver.ConnectionGetOptionInt = (*[0]byte)(C.MySQLConnectionGetOptionInt)
-		driver.ConnectionGetStatistics = (*[0]byte)(C.MySQLConnectionGetStatistics)
-		driver.ConnectionGetStatisticNames = (*[0]byte)(C.MySQLConnectionGetStatisticNames)
-		driver.ConnectionSetOptionBytes = (*[0]byte)(C.MySQLConnectionSetOptionBytes)
-		driver.ConnectionSetOptionDouble = (*[0]byte)(C.MySQLConnectionSetOptionDouble)
-		driver.ConnectionSetOptionInt = (*[0]byte)(C.MySQLConnectionSetOptionInt)
+		driver.ConnectionCancel = (*[0]byte)(C.TrinoConnectionCancel)
+		driver.ConnectionGetOption = (*[0]byte)(C.TrinoConnectionGetOption)
+		driver.ConnectionGetOptionBytes = (*[0]byte)(C.TrinoConnectionGetOptionBytes)
+		driver.ConnectionGetOptionDouble = (*[0]byte)(C.TrinoConnectionGetOptionDouble)
+		driver.ConnectionGetOptionInt = (*[0]byte)(C.TrinoConnectionGetOptionInt)
+		driver.ConnectionGetStatistics = (*[0]byte)(C.TrinoConnectionGetStatistics)
+		driver.ConnectionGetStatisticNames = (*[0]byte)(C.TrinoConnectionGetStatisticNames)
+		driver.ConnectionSetOptionBytes = (*[0]byte)(C.TrinoConnectionSetOptionBytes)
+		driver.ConnectionSetOptionDouble = (*[0]byte)(C.TrinoConnectionSetOptionDouble)
+		driver.ConnectionSetOptionInt = (*[0]byte)(C.TrinoConnectionSetOptionInt)
 
-		driver.StatementCancel = (*[0]byte)(C.MySQLStatementCancel)
-		driver.StatementExecuteSchema = (*[0]byte)(C.MySQLStatementExecuteSchema)
-		driver.StatementGetOption = (*[0]byte)(C.MySQLStatementGetOption)
-		driver.StatementGetOptionBytes = (*[0]byte)(C.MySQLStatementGetOptionBytes)
-		driver.StatementGetOptionDouble = (*[0]byte)(C.MySQLStatementGetOptionDouble)
-		driver.StatementGetOptionInt = (*[0]byte)(C.MySQLStatementGetOptionInt)
-		driver.StatementSetOptionBytes = (*[0]byte)(C.MySQLStatementSetOptionBytes)
-		driver.StatementSetOptionDouble = (*[0]byte)(C.MySQLStatementSetOptionDouble)
-		driver.StatementSetOptionInt = (*[0]byte)(C.MySQLStatementSetOptionInt)
+		driver.StatementCancel = (*[0]byte)(C.TrinoStatementCancel)
+		driver.StatementExecuteSchema = (*[0]byte)(C.TrinoStatementExecuteSchema)
+		driver.StatementGetOption = (*[0]byte)(C.TrinoStatementGetOption)
+		driver.StatementGetOptionBytes = (*[0]byte)(C.TrinoStatementGetOptionBytes)
+		driver.StatementGetOptionDouble = (*[0]byte)(C.TrinoStatementGetOptionDouble)
+		driver.StatementGetOptionInt = (*[0]byte)(C.TrinoStatementGetOptionInt)
+		driver.StatementSetOptionBytes = (*[0]byte)(C.TrinoStatementSetOptionBytes)
+		driver.StatementSetOptionDouble = (*[0]byte)(C.TrinoStatementSetOptionDouble)
+		driver.StatementSetOptionInt = (*[0]byte)(C.TrinoStatementSetOptionInt)
 	}
 
 	return C.ADBC_STATUS_OK

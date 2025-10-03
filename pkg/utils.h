@@ -26,75 +26,75 @@
 #include "adbc.h"
 #include <stdlib.h>
 
-struct AdbcError* MySQLErrorFromArrayStream(struct ArrowArrayStream*, AdbcStatusCode*);
-AdbcStatusCode MySQLDatabaseGetOption(struct AdbcDatabase*, const char*, char*, size_t*, struct AdbcError*);
-AdbcStatusCode MySQLDatabaseGetOptionBytes(struct AdbcDatabase*, const char*, uint8_t*, size_t*, struct AdbcError*);
-AdbcStatusCode MySQLDatabaseGetOptionDouble(struct AdbcDatabase*, const char*, double*, struct AdbcError*);
-AdbcStatusCode MySQLDatabaseGetOptionInt(struct AdbcDatabase*, const char*, int64_t*, struct AdbcError*);
-AdbcStatusCode MySQLDatabaseInit(struct AdbcDatabase* db, struct AdbcError* err);
-AdbcStatusCode MySQLDatabaseNew(struct AdbcDatabase* db, struct AdbcError* err);
-AdbcStatusCode MySQLDatabaseRelease(struct AdbcDatabase* db, struct AdbcError* err);
-AdbcStatusCode MySQLDatabaseSetOption(struct AdbcDatabase* db, const char* key, const char* value, struct AdbcError* err);
-AdbcStatusCode MySQLDatabaseSetOptionBytes(struct AdbcDatabase*, const char*, const uint8_t*, size_t, struct AdbcError*);
-AdbcStatusCode MySQLDatabaseSetOptionDouble(struct AdbcDatabase*, const char*, double, struct AdbcError*);
-AdbcStatusCode MySQLDatabaseSetOptionInt(struct AdbcDatabase*, const char*, int64_t, struct AdbcError*);
+struct AdbcError* TrinoErrorFromArrayStream(struct ArrowArrayStream*, AdbcStatusCode*);
+AdbcStatusCode TrinoDatabaseGetOption(struct AdbcDatabase*, const char*, char*, size_t*, struct AdbcError*);
+AdbcStatusCode TrinoDatabaseGetOptionBytes(struct AdbcDatabase*, const char*, uint8_t*, size_t*, struct AdbcError*);
+AdbcStatusCode TrinoDatabaseGetOptionDouble(struct AdbcDatabase*, const char*, double*, struct AdbcError*);
+AdbcStatusCode TrinoDatabaseGetOptionInt(struct AdbcDatabase*, const char*, int64_t*, struct AdbcError*);
+AdbcStatusCode TrinoDatabaseInit(struct AdbcDatabase* db, struct AdbcError* err);
+AdbcStatusCode TrinoDatabaseNew(struct AdbcDatabase* db, struct AdbcError* err);
+AdbcStatusCode TrinoDatabaseRelease(struct AdbcDatabase* db, struct AdbcError* err);
+AdbcStatusCode TrinoDatabaseSetOption(struct AdbcDatabase* db, const char* key, const char* value, struct AdbcError* err);
+AdbcStatusCode TrinoDatabaseSetOptionBytes(struct AdbcDatabase*, const char*, const uint8_t*, size_t, struct AdbcError*);
+AdbcStatusCode TrinoDatabaseSetOptionDouble(struct AdbcDatabase*, const char*, double, struct AdbcError*);
+AdbcStatusCode TrinoDatabaseSetOptionInt(struct AdbcDatabase*, const char*, int64_t, struct AdbcError*);
 
-AdbcStatusCode MySQLConnectionCancel(struct AdbcConnection*, struct AdbcError*);
-AdbcStatusCode MySQLConnectionCommit(struct AdbcConnection* cnxn, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionGetInfo(struct AdbcConnection* cnxn, const uint32_t* codes, size_t len, struct ArrowArrayStream* out, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionGetObjects(struct AdbcConnection* cnxn, int depth, const char* catalog, const char* dbSchema, const char* tableName, const char** tableType, const char* columnName, struct ArrowArrayStream* out, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionGetOption(struct AdbcConnection*, const char*, char*, size_t*, struct AdbcError*);
-AdbcStatusCode MySQLConnectionGetOptionBytes(struct AdbcConnection*, const char*, uint8_t*, size_t*, struct AdbcError*);
-AdbcStatusCode MySQLConnectionGetOptionDouble(struct AdbcConnection*, const char*, double*, struct AdbcError*);
-AdbcStatusCode MySQLConnectionGetOptionInt(struct AdbcConnection*, const char*, int64_t*, struct AdbcError*);
-AdbcStatusCode MySQLConnectionGetStatistics(struct AdbcConnection*, const char*, const char*, const char*, char, struct ArrowArrayStream*, struct AdbcError*);
-AdbcStatusCode MySQLConnectionGetStatisticNames(struct AdbcConnection*, struct ArrowArrayStream*, struct AdbcError*);
-AdbcStatusCode MySQLConnectionGetTableSchema(struct AdbcConnection* cnxn, const char* catalog, const char* dbSchema, const char* tableName, struct ArrowSchema* schema, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionGetTableTypes(struct AdbcConnection* cnxn, struct ArrowArrayStream* out, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionInit(struct AdbcConnection* cnxn, struct AdbcDatabase* db, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionNew(struct AdbcConnection* cnxn, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionReadPartition(struct AdbcConnection* cnxn, const uint8_t* serialized, size_t serializedLen, struct ArrowArrayStream* out, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionRelease(struct AdbcConnection* cnxn, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionRollback(struct AdbcConnection* cnxn, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionSetOption(struct AdbcConnection* cnxn, const char* key, const char* val, struct AdbcError* err);
-AdbcStatusCode MySQLConnectionSetOptionBytes(struct AdbcConnection*, const char*, const uint8_t*, size_t, struct AdbcError*);
-AdbcStatusCode MySQLConnectionSetOptionDouble(struct AdbcConnection*, const char*, double, struct AdbcError*);
-AdbcStatusCode MySQLConnectionSetOptionInt(struct AdbcConnection*, const char*, int64_t, struct AdbcError*);
+AdbcStatusCode TrinoConnectionCancel(struct AdbcConnection*, struct AdbcError*);
+AdbcStatusCode TrinoConnectionCommit(struct AdbcConnection* cnxn, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionGetInfo(struct AdbcConnection* cnxn, const uint32_t* codes, size_t len, struct ArrowArrayStream* out, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionGetObjects(struct AdbcConnection* cnxn, int depth, const char* catalog, const char* dbSchema, const char* tableName, const char** tableType, const char* columnName, struct ArrowArrayStream* out, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionGetOption(struct AdbcConnection*, const char*, char*, size_t*, struct AdbcError*);
+AdbcStatusCode TrinoConnectionGetOptionBytes(struct AdbcConnection*, const char*, uint8_t*, size_t*, struct AdbcError*);
+AdbcStatusCode TrinoConnectionGetOptionDouble(struct AdbcConnection*, const char*, double*, struct AdbcError*);
+AdbcStatusCode TrinoConnectionGetOptionInt(struct AdbcConnection*, const char*, int64_t*, struct AdbcError*);
+AdbcStatusCode TrinoConnectionGetStatistics(struct AdbcConnection*, const char*, const char*, const char*, char, struct ArrowArrayStream*, struct AdbcError*);
+AdbcStatusCode TrinoConnectionGetStatisticNames(struct AdbcConnection*, struct ArrowArrayStream*, struct AdbcError*);
+AdbcStatusCode TrinoConnectionGetTableSchema(struct AdbcConnection* cnxn, const char* catalog, const char* dbSchema, const char* tableName, struct ArrowSchema* schema, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionGetTableTypes(struct AdbcConnection* cnxn, struct ArrowArrayStream* out, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionInit(struct AdbcConnection* cnxn, struct AdbcDatabase* db, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionNew(struct AdbcConnection* cnxn, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionReadPartition(struct AdbcConnection* cnxn, const uint8_t* serialized, size_t serializedLen, struct ArrowArrayStream* out, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionRelease(struct AdbcConnection* cnxn, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionRollback(struct AdbcConnection* cnxn, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionSetOption(struct AdbcConnection* cnxn, const char* key, const char* val, struct AdbcError* err);
+AdbcStatusCode TrinoConnectionSetOptionBytes(struct AdbcConnection*, const char*, const uint8_t*, size_t, struct AdbcError*);
+AdbcStatusCode TrinoConnectionSetOptionDouble(struct AdbcConnection*, const char*, double, struct AdbcError*);
+AdbcStatusCode TrinoConnectionSetOptionInt(struct AdbcConnection*, const char*, int64_t, struct AdbcError*);
 
-AdbcStatusCode MySQLStatementBind(struct AdbcStatement* stmt, struct ArrowArray* values, struct ArrowSchema* schema, struct AdbcError* err);
-AdbcStatusCode MySQLStatementBindStream(struct AdbcStatement* stmt, struct ArrowArrayStream* stream, struct AdbcError* err);
-AdbcStatusCode MySQLStatementCancel(struct AdbcStatement*, struct AdbcError*);
-AdbcStatusCode MySQLStatementExecuteQuery(struct AdbcStatement* stmt, struct ArrowArrayStream* out, int64_t* affected, struct AdbcError* err);
-AdbcStatusCode MySQLStatementExecutePartitions(struct AdbcStatement* stmt, struct ArrowSchema* schema, struct AdbcPartitions* partitions, int64_t* affected, struct AdbcError* err);
-AdbcStatusCode MySQLStatementExecutePartitionsTrampoline(struct AdbcStatement* stmt, struct ArrowSchema* schema, struct AdbcPartitions* partitions, int64_t* affected, struct AdbcError* err);
-AdbcStatusCode MySQLStatementExecuteSchema(struct AdbcStatement*, struct ArrowSchema*, struct AdbcError*);
-AdbcStatusCode MySQLStatementGetOption(struct AdbcStatement*, const char*, char*, size_t*, struct AdbcError*);
-AdbcStatusCode MySQLStatementGetOptionBytes(struct AdbcStatement*, const char*, uint8_t*, size_t*, struct AdbcError*);
-AdbcStatusCode MySQLStatementGetOptionDouble(struct AdbcStatement*, const char*, double*, struct AdbcError*);
-AdbcStatusCode MySQLStatementGetOptionInt(struct AdbcStatement*, const char*, int64_t*, struct AdbcError*);
-AdbcStatusCode MySQLStatementGetParameterSchema(struct AdbcStatement* stmt, struct ArrowSchema* schema, struct AdbcError* err);
-AdbcStatusCode MySQLStatementNew(struct AdbcConnection* cnxn, struct AdbcStatement* stmt, struct AdbcError* err);
-AdbcStatusCode MySQLStatementPrepare(struct AdbcStatement* stmt, struct AdbcError* err);
-AdbcStatusCode MySQLStatementRelease(struct AdbcStatement* stmt, struct AdbcError* err);
-AdbcStatusCode MySQLStatementSetOption(struct AdbcStatement* stmt, const char* key, const char* value, struct AdbcError* err);
-AdbcStatusCode MySQLStatementSetOptionBytes(struct AdbcStatement*, const char*, const uint8_t*, size_t, struct AdbcError*);
-AdbcStatusCode MySQLStatementSetOptionDouble(struct AdbcStatement*, const char*, double, struct AdbcError*);
-AdbcStatusCode MySQLStatementSetOptionInt(struct AdbcStatement*, const char*, int64_t, struct AdbcError*);
-AdbcStatusCode MySQLStatementSetSqlQuery(struct AdbcStatement* stmt, const char* query, struct AdbcError* err);
-AdbcStatusCode MySQLStatementSetSubstraitPlan(struct AdbcStatement* stmt, const uint8_t* plan, size_t length, struct AdbcError* err);
+AdbcStatusCode TrinoStatementBind(struct AdbcStatement* stmt, struct ArrowArray* values, struct ArrowSchema* schema, struct AdbcError* err);
+AdbcStatusCode TrinoStatementBindStream(struct AdbcStatement* stmt, struct ArrowArrayStream* stream, struct AdbcError* err);
+AdbcStatusCode TrinoStatementCancel(struct AdbcStatement*, struct AdbcError*);
+AdbcStatusCode TrinoStatementExecuteQuery(struct AdbcStatement* stmt, struct ArrowArrayStream* out, int64_t* affected, struct AdbcError* err);
+AdbcStatusCode TrinoStatementExecutePartitions(struct AdbcStatement* stmt, struct ArrowSchema* schema, struct AdbcPartitions* partitions, int64_t* affected, struct AdbcError* err);
+AdbcStatusCode TrinoStatementExecutePartitionsTrampoline(struct AdbcStatement* stmt, struct ArrowSchema* schema, struct AdbcPartitions* partitions, int64_t* affected, struct AdbcError* err);
+AdbcStatusCode TrinoStatementExecuteSchema(struct AdbcStatement*, struct ArrowSchema*, struct AdbcError*);
+AdbcStatusCode TrinoStatementGetOption(struct AdbcStatement*, const char*, char*, size_t*, struct AdbcError*);
+AdbcStatusCode TrinoStatementGetOptionBytes(struct AdbcStatement*, const char*, uint8_t*, size_t*, struct AdbcError*);
+AdbcStatusCode TrinoStatementGetOptionDouble(struct AdbcStatement*, const char*, double*, struct AdbcError*);
+AdbcStatusCode TrinoStatementGetOptionInt(struct AdbcStatement*, const char*, int64_t*, struct AdbcError*);
+AdbcStatusCode TrinoStatementGetParameterSchema(struct AdbcStatement* stmt, struct ArrowSchema* schema, struct AdbcError* err);
+AdbcStatusCode TrinoStatementNew(struct AdbcConnection* cnxn, struct AdbcStatement* stmt, struct AdbcError* err);
+AdbcStatusCode TrinoStatementPrepare(struct AdbcStatement* stmt, struct AdbcError* err);
+AdbcStatusCode TrinoStatementRelease(struct AdbcStatement* stmt, struct AdbcError* err);
+AdbcStatusCode TrinoStatementSetOption(struct AdbcStatement* stmt, const char* key, const char* value, struct AdbcError* err);
+AdbcStatusCode TrinoStatementSetOptionBytes(struct AdbcStatement*, const char*, const uint8_t*, size_t, struct AdbcError*);
+AdbcStatusCode TrinoStatementSetOptionDouble(struct AdbcStatement*, const char*, double, struct AdbcError*);
+AdbcStatusCode TrinoStatementSetOptionInt(struct AdbcStatement*, const char*, int64_t, struct AdbcError*);
+AdbcStatusCode TrinoStatementSetSqlQuery(struct AdbcStatement* stmt, const char* query, struct AdbcError* err);
+AdbcStatusCode TrinoStatementSetSubstraitPlan(struct AdbcStatement* stmt, const uint8_t* plan, size_t length, struct AdbcError* err);
 
-AdbcStatusCode AdbcDriverMySQLInit(int version, void* rawDriver, struct AdbcError* err);
+AdbcStatusCode AdbcDriverTrinoInit(int version, void* rawDriver, struct AdbcError* err);
 
-static inline void MySQLerrRelease(struct AdbcError* error) {
+static inline void TrinoerrRelease(struct AdbcError* error) {
   if (error->release) {
     error->release(error);
     error->release = NULL;
   }
 }
 
-void MySQL_release_error(struct AdbcError* error);
+void Trino_release_error(struct AdbcError* error);
 
-struct MySQLError {
+struct TrinoError {
   char* message;
   char** keys;
   uint8_t** values;
@@ -102,10 +102,10 @@ struct MySQLError {
   int count;
 };
 
-void MySQLReleaseErrWithDetails(struct AdbcError* error);
+void TrinoReleaseErrWithDetails(struct AdbcError* error);
 
-int MySQLErrorGetDetailCount(const struct AdbcError* error);
-struct AdbcErrorDetail MySQLErrorGetDetail(const struct AdbcError* error, int index);
+int TrinoErrorGetDetailCount(const struct AdbcError* error);
+struct AdbcErrorDetail TrinoErrorGetDetail(const struct AdbcError* error, int index);
 
-int MySQLArrayStreamGetSchemaTrampoline(struct ArrowArrayStream* stream, struct ArrowSchema* out);
-int MySQLArrayStreamGetNextTrampoline(struct ArrowArrayStream* stream, struct ArrowArray* out);
+int TrinoArrayStreamGetSchemaTrampoline(struct ArrowArrayStream* stream, struct ArrowSchema* out);
+int TrinoArrayStreamGetNextTrampoline(struct ArrowArrayStream* stream, struct ArrowArray* out);
