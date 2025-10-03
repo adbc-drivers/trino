@@ -232,6 +232,19 @@ func parseTrinoDataType(dataType string) (string, *int64, *int64) {
 	return typeName, precision, scale
 }
 
+// getParameterPlaceholder returns the appropriate SQL placeholder for Arrow types that need casting
+func (c *trinoConnectionImpl) getParameterPlaceholder(arrowType arrow.DataType) string {
+	switch arrowType.(type) {
+	case *arrow.Float32Type:
+		return "CAST(? AS REAL)"
+	case *arrow.Float64Type:
+		return "CAST(? AS DOUBLE)"
+	case *arrow.BinaryType, *arrow.LargeBinaryType:
+		return "FROM_BASE64(?)"
+	default:
+		return "?"
+	}
+}
 
 // ExecuteBulkIngest performs Trino bulk ingest using INSERT statements
 func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
@@ -247,10 +260,12 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 		return -1, c.Base().ErrorHelper.IO("failed to create table: %v", err)
 	}
 
-	// Build INSERT statement (once for all batches)
+	// Build INSERT statement with appropriate casts for unsupported types
 	var placeholders []string
 	for i := 0; i < int(schema.NumFields()); i++ {
-		placeholders = append(placeholders, "?")
+		field := schema.Field(i)
+		placeholder := c.getParameterPlaceholder(field.Type)
+		placeholders = append(placeholders, placeholder)
 	}
 
 	insertSQL := fmt.Sprintf("INSERT INTO \"%s\" VALUES (%s)",
