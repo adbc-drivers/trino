@@ -56,29 +56,241 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 
 // ExecuteBulkIngest performs Trino bulk ingest using INSERT statements
 func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
-	return -1, nil
+	if stream == nil {
+		return -1, c.Base().ErrorHelper.InvalidArgument("stream cannot be nil")
+	}
+
+	var totalRowsInserted int64
+
+	// Get schema from stream and create table if needed
+	schema := stream.Schema()
+	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options); err != nil {
+		return -1, c.Base().ErrorHelper.IO("failed to create table: %v", err)
+	}
+
+	// Build INSERT statement with appropriate casts for unsupported types
+	var placeholders []string
+	for i := 0; i < int(schema.NumFields()); i++ {
+		field := schema.Field(i)
+		placeholder := c.getParameterPlaceholder(field.Type)
+		placeholders = append(placeholders, placeholder)
+	}
+
+	insertSQL := fmt.Sprintf("INSERT INTO \"%s\" VALUES (%s)",
+		options.TableName,
+		strings.Join(placeholders, ", "))
+
+	// Prepare the statement (once for all batches)
+	stmt, err := conn.PrepareContext(ctx, insertSQL)
+	if err != nil {
+		return -1, c.Base().ErrorHelper.IO("failed to prepare insert statement: %v", err)
+	}
+	defer func() {
+		err = errors.Join(err, stmt.Close())
+	}()
+
+	// Process each record batch in the stream
+	for stream.Next() {
+		record := stream.RecordBatch()
+
+		// Insert each row
+		rowsInBatch := int(record.NumRows())
+		for rowIdx := range rowsInBatch {
+			params := make([]any, record.NumCols())
+
+			for colIdx := range int(record.NumCols()) {
+				arr := record.Column(colIdx)
+				field := schema.Field(colIdx)
+
+				// Use type converter to get Go value
+				value, err := c.TypeConverter.ConvertArrowToGo(arr, rowIdx, &field)
+				if err != nil {
+					return -1, c.Base().ErrorHelper.IO("failed to convert value at row %d, col %d: %v", rowIdx, colIdx, err)
+				}
+				params[colIdx] = value
+			}
+
+			// Execute the insert
+			_, err := stmt.ExecContext(ctx, params...)
+			if err != nil {
+				return -1, c.Base().ErrorHelper.IO("failed to execute insert: %v", err)
+			}
+		}
+
+		// Track rows inserted in this batch
+		totalRowsInserted += int64(rowsInBatch)
+	}
+
+	// Check for stream errors
+	if err := stream.Err(); err != nil {
+		return -1, c.Base().ErrorHelper.IO("stream error: %v", err)
+	}
+
+	return totalRowsInserted, nil
 }
+
+
+// getParameterPlaceholder returns the appropriate SQL placeholder for Arrow types that need casting
+func (c *trinoConnectionImpl) getParameterPlaceholder(arrowType arrow.DataType) string {
+	switch arrowType.(type) {
+	case *arrow.Float32Type:
+		return "CAST(? AS REAL)"
+	case *arrow.Float64Type:
+		return "CAST(? AS DOUBLE)"
+	case *arrow.BinaryType, *arrow.LargeBinaryType:
+		return "FROM_BASE64(?)"
+	default:
+		return "?"
+	}
+}
+
 
 // createTableIfNeeded creates the table based on the ingest mode
-// nolint:unused // Placeholder implementation
 func (c *trinoConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions) error {
-	return nil
+	switch options.Mode {
+	case adbc.OptionValueIngestModeCreate:
+		// Create the table (fail if exists)
+		return c.createTable(ctx, conn, tableName, schema, false)
+	case adbc.OptionValueIngestModeCreateAppend:
+		// Create the table if it doesn't exist
+		return c.createTable(ctx, conn, tableName, schema, true)
+	case adbc.OptionValueIngestModeReplace:
+		// Drop and recreate the table (ignore error if table doesn't exist)
+		_ = c.dropTable(ctx, conn, tableName)
+		return c.createTable(ctx, conn, tableName, schema, false)
+	case adbc.OptionValueIngestModeAppend:
+		// Table should already exist, do nothing
+		return nil
+	default:
+		return c.Base().ErrorHelper.InvalidArgument("unsupported ingest mode: %s", options.Mode)
+	}
 }
+
 
 // createTable creates a Trino table from Arrow schema
-// nolint:unused // Placeholder implementation
 func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, ifNotExists bool) error {
-	return nil
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("CREATE TABLE ")
+	if ifNotExists {
+		queryBuilder.WriteString("IF NOT EXISTS ")
+	}
+	queryBuilder.WriteString("\"")
+	queryBuilder.WriteString(tableName)
+	queryBuilder.WriteString("\" (")
+
+	for i, field := range schema.Fields() {
+		if i > 0 {
+			queryBuilder.WriteString(", ")
+		}
+
+		queryBuilder.WriteString("\"")
+		queryBuilder.WriteString(field.Name)
+		queryBuilder.WriteString("\" ")
+
+		// Convert Arrow type to Trino type
+		trinoType := c.arrowToTrinoType(field.Type, field.Nullable)
+		queryBuilder.WriteString(trinoType)
+	}
+
+	queryBuilder.WriteString(")")
+
+	_, err := conn.ExecContext(ctx, queryBuilder.String())
+	return err
 }
+
 
 // dropTable drops a Trino table
-// nolint:unused // Placeholder implementation
 func (c *trinoConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string) error {
-	return nil
+	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS \"%s\"", tableName)
+	_, err := conn.ExecContext(ctx, dropSQL)
+	return err
 }
 
+
 // arrowToTrinoType converts Arrow data type to Trino column type
-// nolint:unused // Placeholder implementation
 func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType, nullable bool) string {
-	return "VARCHAR"
+	var trinoType string
+
+	switch arrowType := arrowType.(type) {
+	case *arrow.BooleanType:
+		trinoType = "BOOLEAN"
+	case *arrow.Int8Type:
+		trinoType = "TINYINT"
+	case *arrow.Int16Type:
+		trinoType = "SMALLINT"
+	case *arrow.Int32Type:
+		trinoType = "INTEGER"
+	case *arrow.Int64Type:
+		trinoType = "BIGINT"
+	case *arrow.Float32Type:
+		trinoType = "REAL"
+	case *arrow.Float64Type:
+		trinoType = "DOUBLE"
+	case *arrow.StringType:
+		trinoType = "VARCHAR"
+	case *arrow.BinaryType:
+		trinoType = "VARBINARY"
+	case *arrow.Date32Type:
+		trinoType = "DATE"
+	case *arrow.TimestampType:
+
+		// Determine precision based on Arrow timestamp unit
+		var precision string
+		switch arrowType.Unit {
+		case arrow.Second:
+			precision = ""
+		case arrow.Millisecond:
+			precision = "(3)"
+		case arrow.Microsecond:
+			precision = "(6)"
+		case arrow.Nanosecond:
+			precision = "(6)" // MySQL max is 6 digits
+		default:
+			precision = ""
+		}
+
+		// Use TIMESTAMP for timezone-naive timestamps, TIMESTAMP WITH TIME ZONE for timezone-aware
+		if arrowType.TimeZone != "" {
+			// Timezone-aware (timestamptz) -> TIMESTAMP WITH TIME ZONE
+			trinoType = "TIMESTAMP" + precision + " WITH TIME ZONE"
+		} else {
+			// Timezone-naive (timestamp) -> TIMESTAMP
+			trinoType = "TIMESTAMP" + precision
+		}
+
+	case *arrow.Time32Type:
+		// Determine precision based on Arrow time unit
+		switch arrowType.Unit {
+		case arrow.Second:
+			trinoType = "TIME"
+		case arrow.Millisecond:
+			trinoType = "TIME(3)"
+		default:
+			trinoType = "TIME"
+		}
+
+	case *arrow.Time64Type:
+		// Determine precision based on Arrow time unit
+		switch arrowType.Unit {
+		case arrow.Microsecond:
+			trinoType = "TIME(6)"
+		case arrow.Nanosecond:
+			trinoType = "TIME(6)" // Trino max is 6 digits
+		default:
+			trinoType = "TIME"
+		}
+	case *arrow.Decimal32Type, *arrow.Decimal64Type, *arrow.Decimal128Type, *arrow.Decimal256Type:
+		if decType, ok := arrowType.(arrow.DecimalType); ok {
+			trinoType = fmt.Sprintf("DECIMAL(%d,%d)", decType.GetPrecision(), decType.GetScale())
+		} else {
+			trinoType = "DECIMAL(10,2)"
+		}
+	default:
+		// Default to VARCHAR for unknown types
+		trinoType = "VARCHAR"
+	}
+
+	// Note: In Trino, columns are nullable by default, and NOT NULL constraint is specified separately
+	// For simplicity, we don't add NULL/NOT NULL here since Trino handles nullability differently
+	return trinoType
 }
