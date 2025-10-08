@@ -1,1 +1,0 @@
-INSERT INTO test_binary VALUES (FROM_BASE64(?))

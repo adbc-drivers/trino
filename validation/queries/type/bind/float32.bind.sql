@@ -1,1 +1,0 @@
-INSERT INTO test_float32 VALUES (CAST($1 AS REAL))
