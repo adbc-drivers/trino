@@ -20,9 +20,7 @@ import (
    "context"
    "database/sql"
    "errors"
-   "fmt"
    "strings"
-
 
    "github.com/adbc-drivers/driverbase-go/driverbase"
 )
@@ -44,7 +42,7 @@ func (c *trinoConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *st
 
 	rows, err := c.Db.QueryContext(ctx, queryBuilder.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query catalogs: %w", err)
+		return nil, c.ErrorHelper.IO("failed to query catalogs: %v", err)
 	}
 	defer func() {
 		err = errors.Join(err, rows.Close())
@@ -54,13 +52,13 @@ func (c *trinoConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *st
 	for rows.Next() {
 		var catalog string
 		if err := rows.Scan(&catalog); err != nil {
-			return nil, fmt.Errorf("failed to scan catalog: %w", err)
+			return nil, c.ErrorHelper.IO("failed to scan catalog: %v", err)
 		}
 		catalogs = append(catalogs, catalog)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error during catalog iteration: %w", err)
+		return nil, c.ErrorHelper.IO("error during catalog iteration: %v", err)
 	}
 
 	return catalogs, err
@@ -83,7 +81,7 @@ func (c *trinoConnectionImpl) GetDBSchemasForCatalog(ctx context.Context, catalo
 
 	rows, err := c.Db.QueryContext(ctx, queryBuilder.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query schemas for catalog %s: %w", catalog, err)
+		return nil, c.ErrorHelper.IO("failed to query schemas for catalog %s: %v", catalog, err)
 	}
 	defer func() {
 		err = errors.Join(err, rows.Close())
@@ -93,13 +91,13 @@ func (c *trinoConnectionImpl) GetDBSchemasForCatalog(ctx context.Context, catalo
 	for rows.Next() {
 		var schema string
 		if err := rows.Scan(&schema); err != nil {
-			return nil, fmt.Errorf("failed to scan schema: %w", err)
+			return nil, c.ErrorHelper.IO("failed to scan schema: %v", err)
 		}
 		schemas = append(schemas, schema)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error during schema iteration: %w", err)
+		return nil, c.ErrorHelper.IO("error during schema iteration: %v", err)
 	}
 
 	return schemas, nil
@@ -137,7 +135,7 @@ func (c *trinoConnectionImpl) getTablesOnly(ctx context.Context, catalog string,
 
 	rows, err := c.Db.QueryContext(ctx, queryBuilder.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query tables for catalog %s: %w", catalog, err)
+		return nil, c.ErrorHelper.IO("failed to query tables for catalog %s: %v", catalog, err)
 	}
 	defer func() {
 		err = errors.Join(err, rows.Close())
@@ -147,7 +145,7 @@ func (c *trinoConnectionImpl) getTablesOnly(ctx context.Context, catalog string,
 	for rows.Next() {
 		var tableName, tableType string
 		if err := rows.Scan(&tableName, &tableType); err != nil {
-			return nil, fmt.Errorf("failed to scan table info: %w", err)
+			return nil, c.ErrorHelper.IO("failed to scan table info: %v", err)
 		}
 
 		tables = append(tables, driverbase.TableInfo{
@@ -157,7 +155,7 @@ func (c *trinoConnectionImpl) getTablesOnly(ctx context.Context, catalog string,
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error during table iteration: %w", err)
+		return nil, c.ErrorHelper.IO("error during table iteration: %v", err)
 	}
 
 	return tables, err
@@ -213,7 +211,7 @@ func (c *trinoConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 
 	rows, err := c.Db.QueryContext(ctx, queryBuilder.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query tables with columns for catalog %s: %w", catalog, err)
+		return nil, c.ErrorHelper.IO("failed to query tables with columns for catalog %s: %v", catalog, err)
 	}
 	defer func() {
 		err = errors.Join(err, rows.Close())
@@ -230,7 +228,7 @@ func (c *trinoConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 			&tc.OrdinalPosition, &tc.ColumnName, &tc.ColumnComment,
 			&tc.DataType, &tc.IsNullable, &tc.ColumnDefault,
 		); err != nil {
-			return nil, fmt.Errorf("failed to scan table with columns: %w", err)
+			return nil, c.ErrorHelper.IO("failed to scan table with columns: %v", err)
 		}
 
 		// Check if we need to create a new table entry
@@ -249,16 +247,8 @@ func (c *trinoConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 		// Set numeric precision radix for Trino types
 		dataType := strings.ToUpper(tc.DataType)
 		switch dataType {
-		// Decimal radix (base 10) - integer types
-		case "TINYINT", "SMALLINT", "INTEGER", "BIGINT":
-			radix = sql.NullInt16{Int16: 10, Valid: true}
-
-		// Decimal radix (base 10) - decimal/numeric types
-		case "DECIMAL", "NUMERIC":
-			radix = sql.NullInt16{Int16: 10, Valid: true}
-
-		// Decimal radix (base 10) - floating point types
-		case "REAL", "DOUBLE":
+		// Decimal radix (base 10) - all numeric types
+		case "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "DECIMAL", "NUMERIC", "REAL", "DOUBLE":
 			radix = sql.NullInt16{Int16: 10, Valid: true}
 
 		// No radix for non-numeric types (VARCHAR, BOOLEAN, DATE, TIMESTAMP, etc.)
@@ -287,7 +277,7 @@ func (c *trinoConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error during table with columns iteration: %w", err)
+		return nil, c.ErrorHelper.IO("error during table with columns iteration: %v", err)
 	}
 
 	// TODO: Add constraint and foreign key metadata support

@@ -17,17 +17,27 @@ package trino
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"net/url"
 	"strings"
 
+	"github.com/adbc-drivers/driverbase-go/driverbase"
 	"github.com/adbc-drivers/driverbase-go/sqlwrapper"
 	"github.com/apache/arrow-adbc/go/adbc"
+	"github.com/trinodb/trino-go-client/trino"
 )
 
 // TrinoDBFactory provides Trino-specific database connection creation.
 // It handles Trino DSN formatting and connection parameters.
-type TrinoDBFactory struct{}
+type TrinoDBFactory struct {
+	errorHelper driverbase.ErrorHelper
+}
+
+// NewTrinoDBFactory creates a new TrinoDBFactory with proper error handling.
+func NewTrinoDBFactory() *TrinoDBFactory {
+	return &TrinoDBFactory{
+		errorHelper: driverbase.ErrorHelper{DriverName: "trino"},
+	}
+}
 
 // CreateDB creates a *sql.DB using sql.Open with a Trino-specific DSN.
 func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts map[string]string) (*sql.DB, error) {
@@ -40,6 +50,16 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 }
 
 // buildTrinoDSN constructs a Trino DSN from the provided options.
+// Handles the following scenarios:
+//  1. Full DSN, no separate credentials:
+//     Example: "https://user:pass@localhost:8080?catalog=default"
+//     → Returned as-is.
+//  2. Plain host + credentials:
+//     Example: baseURI="localhost:8080", username="user", password="secret"
+//     → Produces "https://user:secret@localhost:8080".
+//  3. Full DSN + override credentials:
+//     Example: baseURI="https://old:old@localhost:8080?catalog=default", username="new", password="newpass"
+//     → Credentials are replaced.
 func (f *TrinoDBFactory) buildTrinoDSN(opts map[string]string) (string, error) {
 	baseURI := opts[adbc.OptionKeyURI]
 	username := opts[adbc.OptionKeyUsername]
@@ -47,7 +67,7 @@ func (f *TrinoDBFactory) buildTrinoDSN(opts map[string]string) (string, error) {
 
 	// If no base URI provided, this is an error
 	if baseURI == "" {
-		return "", fmt.Errorf("missing required option %s", adbc.OptionKeyURI)
+		return "", f.errorHelper.InvalidArgument("missing required option %s", adbc.OptionKeyURI)
 	}
 
 	// If no credentials provided, return original URI
@@ -59,83 +79,98 @@ func (f *TrinoDBFactory) buildTrinoDSN(opts map[string]string) (string, error) {
 	return f.buildTrinoDSNFromURI(baseURI, username, password)
 }
 
-// buildTrinoDSNFromURI handles Trino DSN formats.
+// buildTrinoDSNFromURI handles Trino DSN formats using trino.Config.
 func (f *TrinoDBFactory) buildTrinoDSNFromURI(baseURI, username, password string) (string, error) {
-	// Handle HTTP/HTTPS URLs (native Trino DSN format)
+	var cfg *trino.Config
+	var err error
+
 	if strings.HasPrefix(baseURI, "http://") || strings.HasPrefix(baseURI, "https://") {
-		return f.buildFromHTTPURI(baseURI, username, password)
+		// Parse existing Trino DSN manually since trino.ParseDSN doesn't exist
+		cfg, err = f.parseTrinoURI(baseURI)
+		if err != nil {
+			return "", f.errorHelper.InvalidArgument("invalid Trino DSN format: %v", err)
+		}
+	} else {
+		// Treat as plain host string - assume HTTPS
+		cfg = &trino.Config{
+			ServerURI: "https://" + baseURI,
+		}
 	}
 
-	// Handle plain host string - assume HTTPS
-	return f.buildFromPlainHost(baseURI, username, password)
+	// Override credentials if provided
+	if username != "" || password != "" {
+		// Update the ServerURI with new credentials
+		if err := f.updateConfigCredentials(cfg, username, password); err != nil {
+			return "", err
+		}
+	}
+
+	return cfg.FormatDSN()
 }
 
-// buildFromHTTPURI handles http:// and https:// URI formats.
-func (f *TrinoDBFactory) buildFromHTTPURI(baseURI, username, password string) (string, error) {
-	u, err := url.Parse(baseURI)
+// parseTrinoURI manually parses a Trino URI into a Config since trino.ParseDSN doesn't exist.
+func (f *TrinoDBFactory) parseTrinoURI(uri string) (*trino.Config, error) {
+	u, err := url.Parse(uri)
 	if err != nil {
-		return "", fmt.Errorf("invalid Trino URI format: %w", err)
+		return nil, err
 	}
 
-	// Start with the existing URL structure
-	var dsnBuilder strings.Builder
-	dsnBuilder.WriteString(u.Scheme)
-	dsnBuilder.WriteString("://")
-
-	// Add user credentials to the URL authority if provided
-	if username != "" {
-		dsnBuilder.WriteString(username)
-		if password != "" {
-			dsnBuilder.WriteString(":")
-			dsnBuilder.WriteString(password)
-		}
-		dsnBuilder.WriteString("@")
-	} else if u.User != nil {
-		// Use existing user info if no override provided
-		if pwd, ok := u.User.Password(); ok {
-			dsnBuilder.WriteString(fmt.Sprintf("%s:%s@", u.User.Username(), pwd))
-		} else {
-			dsnBuilder.WriteString(fmt.Sprintf("%s@", u.User.Username()))
-		}
+	cfg := &trino.Config{
+		ServerURI: uri,
 	}
 
-	// Add host and port
-	dsnBuilder.WriteString(u.Host)
-
-	// Add path if present
-	if u.Path != "" {
-		dsnBuilder.WriteString(u.Path)
-	}
-
-	// Preserve original query parameters
+	// Extract query parameters and map them to Config fields
 	if u.RawQuery != "" {
-		dsnBuilder.WriteString("?")
-		dsnBuilder.WriteString(u.RawQuery)
+		values := u.Query()
+		if catalog := values.Get("catalog"); catalog != "" {
+			cfg.Catalog = catalog
+		}
+		if schema := values.Get("schema"); schema != "" {
+			cfg.Schema = schema
+		}
+		if source := values.Get("source"); source != "" {
+			cfg.Source = source
+		}
+		if customClient := values.Get("custom_client"); customClient != "" {
+			cfg.CustomClientName = customClient
+		}
+		// Parse session_properties if present
+		if sessionProps := values.Get("session_properties"); sessionProps != "" {
+			cfg.SessionProperties = make(map[string]string)
+			for _, prop := range strings.Split(sessionProps, ",") {
+				if parts := strings.SplitN(prop, "=", 2); len(parts) == 2 {
+					cfg.SessionProperties[parts[0]] = parts[1]
+				}
+			}
+		}
 	}
 
-	return dsnBuilder.String(), nil
+	return cfg, nil
 }
 
-// buildFromPlainHost handles plain host strings by building HTTPS URLs.
-func (f *TrinoDBFactory) buildFromPlainHost(hostString, username, password string) (string, error) {
-	// Build HTTPS URL from plain host
-	var dsnBuilder strings.Builder
-	dsnBuilder.WriteString("https://")
-
-	// Add credentials to URL authority if provided
-	if username != "" {
-		dsnBuilder.WriteString(username)
-		if password != "" {
-			dsnBuilder.WriteString(":")
-			dsnBuilder.WriteString(password)
-		}
-		dsnBuilder.WriteString("@")
+// updateConfigCredentials updates the ServerURI in the config with new credentials.
+func (f *TrinoDBFactory) updateConfigCredentials(cfg *trino.Config, username, password string) error {
+	// Parse the current ServerURI
+	if cfg.ServerURI == "" {
+		return f.errorHelper.InvalidArgument("config ServerURI is empty")
 	}
 
-	// Add host (could include port)
-	dsnBuilder.WriteString(hostString)
+	u, err := url.Parse(cfg.ServerURI)
+	if err != nil {
+		return f.errorHelper.InvalidArgument("invalid ServerURI format: %v", err)
+	}
 
-	return dsnBuilder.String(), nil
+	// Set new credentials
+	if username != "" {
+		if password != "" {
+			u.User = url.UserPassword(username, password)
+		} else {
+			u.User = url.User(username)
+		}
+	}
+
+	cfg.ServerURI = u.String()
+	return nil
 }
 
 // Ensure TrinoDBFactory implements sqlwrapper.DBFactory

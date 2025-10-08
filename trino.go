@@ -254,9 +254,6 @@ type trinoConnectionImpl struct {
 	version string
 }
 
-// implements BulkIngester interface
-var _ sqlwrapper.BulkIngester = (*trinoConnectionImpl)(nil)
-
 // implements DbObjectsEnumerator interface
 var _ driverbase.DbObjectsEnumerator = (*trinoConnectionImpl)(nil)
 
@@ -283,7 +280,7 @@ func NewDriver(alloc memory.Allocator) adbc.Driver {
 		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{},
 	}
 
-	driver := sqlwrapper.NewDriver(alloc, "trino", "Trino", &TrinoDBFactory{}, typeConverter).
+	driver := sqlwrapper.NewDriver(alloc, "trino", "Trino", NewTrinoDBFactory(), typeConverter).
 		WithConnectionFactory(&trinoConnectionFactory{})
 	driver.DriverInfo.MustRegister(map[adbc.InfoCode]any{
 		adbc.InfoDriverName:      "ADBC Driver Foundry Driver for Trino",
