@@ -150,7 +150,7 @@ func (ins *trinoBinaryInserter) AppendValue(sqlValue any) error {
 
 	t, ok := sqlValue.(string)
 	if !ok {
-		return fmt.Errorf("expected time.Time for timestamp, got %T", sqlValue)
+		return fmt.Errorf("expected string for trino binary inserter, got %T", sqlValue)
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(t)
