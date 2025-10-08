@@ -1,0 +1,1 @@
+INSERT INTO test_float64 VALUES (CAST($1 AS DOUBLE))
