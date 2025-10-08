@@ -17,10 +17,14 @@ package trino
 
 
 import (
-   "context"
-   "fmt"
+	"context"
+	"fmt"
 
-   "github.com/apache/arrow-adbc/go/adbc"
+	"github.com/adbc-drivers/driverbase-go/driverbase"
+	sqlwrapper "github.com/adbc-drivers/driverbase-go/sqlwrapper"
+	"github.com/apache/arrow-adbc/go/adbc"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
