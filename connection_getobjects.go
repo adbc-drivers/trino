@@ -17,18 +17,17 @@ package trino
 
 
 import (
-   "context"
-   "database/sql"
-   "errors"
-   "strings"
+	"context"
+	"database/sql"
+	"errors"
+	"strings"
 
-   "github.com/adbc-drivers/driverbase-go/driverbase"
+	"github.com/adbc-drivers/driverbase-go/driverbase"
 )
 
 
 func (c *trinoConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *string) (catalogs []string, err error) {
 	// In Trino, catalogs are data sources (like memory, hive, etc.)
-	// Build query using strings.Builder
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("SELECT catalog_name FROM system.metadata.catalogs")
 	args := []any{}
@@ -177,7 +176,6 @@ func (c *trinoConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 		ColumnDefault   sql.NullString
 	}
 
-	// Build query using strings.Builder
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString(`
 		SELECT
@@ -241,27 +239,30 @@ func (c *trinoConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 		}
 
 		// Process column data
-		var radix sql.NullInt16
-		var nullable sql.NullInt16
+		var radix *int16
+		var nullable *int16
 
 		// Set numeric precision radix for Trino types
 		dataType := strings.ToUpper(tc.DataType)
 		switch dataType {
 		// Decimal radix (base 10) - all numeric types
 		case "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "DECIMAL", "NUMERIC", "REAL", "DOUBLE":
-			radix = sql.NullInt16{Int16: 10, Valid: true}
+			r := int16(10)
+			radix = &r
 
 		// No radix for non-numeric types (VARCHAR, BOOLEAN, DATE, TIMESTAMP, etc.)
 		default:
-			radix = sql.NullInt16{Valid: false}
+			radix = nil
 		}
 
 		// Set nullable information
 		switch tc.IsNullable {
 		case "YES":
-			nullable = sql.NullInt16{Int16: int16(driverbase.XdbcColumnNullable), Valid: true}
+			n := int16(driverbase.XdbcColumnNullable)
+			nullable = &n
 		case "NO":
-			nullable = sql.NullInt16{Int16: int16(driverbase.XdbcColumnNoNulls), Valid: true}
+			n := int16(driverbase.XdbcColumnNoNulls)
+			nullable = &n
 		}
 
 		currentTable.TableColumns = append(currentTable.TableColumns, driverbase.ColumnInfo{
@@ -269,8 +270,8 @@ func (c *trinoConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 			OrdinalPosition:  &tc.OrdinalPosition,
 			Remarks:          driverbase.NullStringToPtr(tc.ColumnComment),
 			XdbcTypeName:     &tc.DataType,
-			XdbcNumPrecRadix: driverbase.NullInt16ToPtr(radix),
-			XdbcNullable:     driverbase.NullInt16ToPtr(nullable),
+			XdbcNumPrecRadix: radix,
+			XdbcNullable:     nullable,
 			XdbcIsNullable:   &tc.IsNullable,
 			XdbcColumnDef:    driverbase.NullStringToPtr(tc.ColumnDefault),
 		})

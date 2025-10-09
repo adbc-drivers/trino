@@ -186,25 +186,25 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		// For Trino driver, convert Decimal32 to trino.Numeric
 		decimalType := a.DataType().(*arrow.Decimal32Type)
 		val := a.Value(index)
-		return convertDecimalToTrinoNumeric(fmt.Sprintf("%d", int64(val)), decimalType.Scale)
+		return convertDecimalToTrinoNumericFromInt(big.NewInt(int64(val)), decimalType.Scale), nil
 
 	case *array.Decimal64:
 		// For Trino driver, convert Decimal64 to trino.Numeric
 		decimalType := a.DataType().(*arrow.Decimal64Type)
 		val := a.Value(index)
-		return convertDecimalToTrinoNumeric(fmt.Sprintf("%d", int64(val)), decimalType.Scale)
+		return convertDecimalToTrinoNumericFromInt(big.NewInt(int64(val)), decimalType.Scale), nil
 
 	case *array.Decimal128:
 		// For Trino driver, convert Decimal128 to trino.Numeric
 		decimalType := a.DataType().(*arrow.Decimal128Type)
 		val := a.Value(index)
-		return convertDecimalToTrinoNumeric(val.BigInt().String(), decimalType.Scale)
+		return convertDecimalToTrinoNumericFromInt(val.BigInt(), decimalType.Scale), nil
 
 	case *array.Decimal256:
 		// For Trino driver, convert Decimal256 to trino.Numeric
 		decimalType := a.DataType().(*arrow.Decimal256Type)
 		val := a.Value(index)
-		return convertDecimalToTrinoNumeric(val.BigInt().String(), decimalType.Scale)
+		return convertDecimalToTrinoNumericFromInt(val.BigInt(), decimalType.Scale), nil
 
 	case *array.Float32:
 		// Trino Go client doesn't support float32/float64 - convert to string
@@ -232,19 +232,13 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 	}
 }
 
-// convertDecimalToTrinoNumeric converts a decimal string with scale to trino.Numeric
-func convertDecimalToTrinoNumeric(valStr string, scale int32) (trino.Numeric, error) {
-	i := new(big.Int)
-	_, ok := i.SetString(valStr, 10)
-	if !ok {
-		return "", fmt.Errorf("invalid decimal string: %s", valStr)
-	}
-
+// convertDecimalToTrinoNumericFromInt converts a big.Int with scale to trino.Numeric
+func convertDecimalToTrinoNumericFromInt(value *big.Int, scale int32) trino.Numeric {
 	// scale means divide by 10^scale
 	scaleFactor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(scale)), nil)
-	rat := new(big.Rat).SetFrac(i, scaleFactor)
+	rat := new(big.Rat).SetFrac(value, scaleFactor)
 
-	return trino.Numeric(rat.FloatString(int(scale))), nil
+	return trino.Numeric(rat.FloatString(int(scale)))
 }
 
 // trinoConnectionImpl extends sqlwrapper connection with DbObjectsEnumerator

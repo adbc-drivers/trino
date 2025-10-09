@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package trino
-
 
 import (
 	"context"
@@ -34,12 +32,8 @@ func (c *trinoConnectionImpl) GetCurrentCatalog() (string, error) {
 	if err != nil {
 		return "", c.Base().ErrorHelper.IO("failed to get current catalog: %v", err)
 	}
-	if catalog == "" {
-		return "", c.Base().ErrorHelper.InvalidState("no current catalog set")
-	}
 	return catalog, nil
 }
-
 
 // GetCurrentDbSchema implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) GetCurrentDbSchema() (string, error) {
@@ -51,13 +45,11 @@ func (c *trinoConnectionImpl) GetCurrentDbSchema() (string, error) {
 	return schema, nil
 }
 
-
 // SetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) SetCurrentCatalog(catalog string) error {
 	_, err := c.Db.ExecContext(context.Background(), "USE "+catalog)
 	return err
 }
-
 
 // SetCurrentDbSchema implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) SetCurrentDbSchema(schema string) error {
@@ -67,7 +59,6 @@ func (c *trinoConnectionImpl) SetCurrentDbSchema(schema string) error {
 	_, err := c.Db.ExecContext(context.Background(), "USE "+schema)
 	return err
 }
-
 
 func (c *trinoConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes []adbc.InfoCode) error {
 	if c.version == "" {
@@ -79,7 +70,6 @@ func (c *trinoConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes [
 	}
 	return c.DriverInfo.RegisterInfoCode(adbc.InfoVendorVersion, c.version)
 }
-
 
 // GetTableSchema returns the Arrow schema for a Trino table
 func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *string, dbSchema *string, tableName string) (schema *arrow.Schema, err error) {
