@@ -1,0 +1,10 @@
+{
+    "format": "+s",
+    "children": [
+        {
+            "name": "res",
+            "format": "d:10,2,64",
+            "flags": ["nullable"]
+        }
+    ]
+}

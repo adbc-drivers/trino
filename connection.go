@@ -16,6 +16,7 @@ package trino
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
 	sqlwrapper "github.com/adbc-drivers/driverbase-go/sqlwrapper"
@@ -26,26 +27,50 @@ import (
 
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) GetCurrentCatalog() (string, error) {
-	return "", nil
+	var catalog string
+	err := c.Db.QueryRowContext(context.Background(), "SELECT current_catalog").Scan(&catalog)
+	if err != nil {
+		return "", c.Base().ErrorHelper.IO("failed to get current catalog: %v", err)
+	}
+	return catalog, nil
 }
 
 // GetCurrentDbSchema implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) GetCurrentDbSchema() (string, error) {
-	return "", nil
+	var schema string
+	err := c.Db.QueryRowContext(context.Background(), "SELECT current_schema").Scan(&schema)
+	if err != nil {
+		return "", c.Base().ErrorHelper.IO("failed to get current schema: %v", err)
+	}
+	return schema, nil
 }
 
 // SetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) SetCurrentCatalog(catalog string) error {
-	return nil
+	if catalog == "" {
+		return nil // No-op for empty catalog
+	}
+	_, err := c.Db.ExecContext(context.Background(), "USE "+catalog+".information_schema")
+	return err
 }
 
 // SetCurrentDbSchema implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) SetCurrentDbSchema(schema string) error {
-	return nil
+	if schema == "" {
+		return nil // No-op for empty schema
+	}
+	_, err := c.Db.ExecContext(context.Background(), "USE "+schema)
+	return err
 }
 
 func (c *trinoConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes []adbc.InfoCode) error {
-	c.version = ""
+	if c.version == "" {
+		var version string
+		if err := c.Conn.QueryRowContext(ctx, "SELECT node_version FROM system.runtime.nodes LIMIT 1").Scan(&version); err != nil {
+			return c.ErrorHelper.Errorf(adbc.StatusInternal, "failed to get version: %v", err)
+		}
+		c.version = fmt.Sprintf("Trino %s", version)
+	}
 	return c.DriverInfo.RegisterInfoCode(adbc.InfoVendorVersion, c.version)
 }
 
