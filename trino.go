@@ -248,6 +248,9 @@ type trinoConnectionImpl struct {
 	version string
 }
 
+// implements BulkIngester interface
+var _ sqlwrapper.BulkIngester = (*trinoConnectionImpl)(nil)
+
 // implements DbObjectsEnumerator interface
 var _ driverbase.DbObjectsEnumerator = (*trinoConnectionImpl)(nil)
 
