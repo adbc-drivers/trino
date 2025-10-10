@@ -25,7 +25,7 @@ class TrinoQuirks(model.DriverQuirks):
     vendor_version = "Trino 476"
     short_version = "476"
     features = model.DriverFeatures(
-        connection_get_table_schema=False,
+        connection_get_table_schema=True,
         connection_transactions=False,
         get_objects_constraints_foreign=False,
         get_objects_constraints_primary=False,
