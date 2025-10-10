@@ -47,7 +47,10 @@ func (c *trinoConnectionImpl) GetCurrentDbSchema() (string, error) {
 
 // SetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) SetCurrentCatalog(catalog string) error {
-	_, err := c.Db.ExecContext(context.Background(), "USE "+catalog)
+	if catalog == "" {
+		return nil // No-op for empty catalog
+	}
+	_, err := c.Db.ExecContext(context.Background(), "USE "+catalog+".information_schema")
 	return err
 }
 
