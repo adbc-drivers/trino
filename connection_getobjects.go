@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package trino
-
 
 import (
 	"context"
@@ -24,7 +22,6 @@ import (
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
 )
-
 
 func (c *trinoConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *string) (catalogs []string, err error) {
 	// In Trino, catalogs are data sources (like memory, hive, etc.)
@@ -62,7 +59,6 @@ func (c *trinoConnectionImpl) GetCatalogs(ctx context.Context, catalogFilter *st
 
 	return catalogs, err
 }
-
 
 func (c *trinoConnectionImpl) GetDBSchemasForCatalog(ctx context.Context, catalog string, schemaFilter *string) (schemas []string, err error) {
 	// In Trino, schemas are namespaces within catalogs (e.g., memory.default, hive.warehouse)
@@ -102,14 +98,12 @@ func (c *trinoConnectionImpl) GetDBSchemasForCatalog(ctx context.Context, catalo
 	return schemas, nil
 }
 
-
 func (c *trinoConnectionImpl) GetTablesForDBSchema(ctx context.Context, catalog string, schema string, tableFilter *string, columnFilter *string, includeColumns bool) (tables []driverbase.TableInfo, err error) {
 	if includeColumns {
 		return c.getTablesWithColumns(ctx, catalog, schema, tableFilter, columnFilter)
 	}
 	return c.getTablesOnly(ctx, catalog, schema, tableFilter)
 }
-
 
 // getTablesOnly retrieves table information without columns
 func (c *trinoConnectionImpl) getTablesOnly(ctx context.Context, catalog string, schema string, tableFilter *string) (tables []driverbase.TableInfo, err error) {
@@ -159,7 +153,6 @@ func (c *trinoConnectionImpl) getTablesOnly(ctx context.Context, catalog string,
 
 	return tables, err
 }
-
 
 // getTablesWithColumns retrieves complete table and column information
 func (c *trinoConnectionImpl) getTablesWithColumns(ctx context.Context, catalog string, schema string, tableFilter *string, columnFilter *string) (tables []driverbase.TableInfo, err error) {
