@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
 	sqlwrapper "github.com/adbc-drivers/driverbase-go/sqlwrapper"
@@ -51,7 +52,7 @@ func (c *trinoConnectionImpl) SetCurrentCatalog(catalog string) error {
 	if catalog == "" {
 		return nil // No-op for empty catalog
 	}
-	_, err := c.Db.ExecContext(context.Background(), "USE "+catalog+".information_schema")
+	_, err := c.Db.ExecContext(context.Background(), "USE "+quoteIdentifier(catalog)+".information_schema")
 	return err
 }
 
@@ -60,7 +61,7 @@ func (c *trinoConnectionImpl) SetCurrentDbSchema(schema string) error {
 	if schema == "" {
 		return nil // No-op for empty schema
 	}
-	_, err := c.Db.ExecContext(context.Background(), "USE "+schema)
+	_, err := c.Db.ExecContext(context.Background(), "USE "+quoteIdentifier(schema))
 	return err
 }
 
@@ -99,7 +100,7 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 		}
 	}
 
-	qualifiedTableName := fmt.Sprintf("%s.%s.%s", catalogName, schemaName, tableName)
+	qualifiedTableName := fmt.Sprintf("%s.%s.%s", quoteIdentifier(catalogName), quoteIdentifier(schemaName), quoteIdentifier(tableName))
 
 	query := fmt.Sprintf("SELECT * FROM %s WHERE 1=0", qualifiedTableName)
 	stmt, err := c.Conn.PrepareContext(ctx, query)
@@ -139,6 +140,8 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 			Nullable:         true, // Default to nullable
 		}
 
+		// TODO: trino driver does not support colType.Nullable.
+		// This code is here as a placeholder and a reminder to fix it when we accurately deal with nullability
 		if nullable, ok := colType.Nullable(); ok {
 			wrappedColType.Nullable = nullable
 		}
@@ -186,14 +189,13 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 
 	// Build INSERT statement with appropriate casts for unsupported types
 	var placeholders []string
-	for i := 0; i < int(schema.NumFields()); i++ {
-		field := schema.Field(i)
+	for _, field := range schema.Fields() {
 		placeholder := c.getParameterPlaceholder(field.Type)
 		placeholders = append(placeholders, placeholder)
 	}
 
-	insertSQL := fmt.Sprintf("INSERT INTO \"%s\" VALUES (%s)",
-		options.TableName,
+	insertSQL := fmt.Sprintf("INSERT INTO %s VALUES (%s)",
+		quoteIdentifier(options.TableName),
 		strings.Join(placeholders, ", "))
 
 	// Prepare the statement (once for all batches)
@@ -207,15 +209,15 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 
 	// Process each record batch in the stream
 	for stream.Next() {
-		record := stream.RecordBatch()
+		recordBatch := stream.RecordBatch()
 
 		// Insert each row
-		rowsInBatch := int(record.NumRows())
+		rowsInBatch := int(recordBatch.NumRows())
 		for rowIdx := range rowsInBatch {
-			params := make([]any, record.NumCols())
+			params := make([]any, recordBatch.NumCols())
 
-			for colIdx := range int(record.NumCols()) {
-				arr := record.Column(colIdx)
+			for colIdx := range int(recordBatch.NumCols()) {
+				arr := recordBatch.Column(colIdx)
 				field := schema.Field(colIdx)
 
 				// Use type converter to get Go value
@@ -271,8 +273,10 @@ func (c *trinoConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 		// Create the table if it doesn't exist
 		return c.createTable(ctx, conn, tableName, schema, true)
 	case adbc.OptionValueIngestModeReplace:
-		// Drop and recreate the table (ignore error if table doesn't exist)
-		_ = c.dropTable(ctx, conn, tableName)
+		// Drop and recreate the table
+		if err := c.dropTable(ctx, conn, tableName); err != nil {
+			return err
+		}
 		return c.createTable(ctx, conn, tableName, schema, false)
 	case adbc.OptionValueIngestModeAppend:
 		// Table should already exist, do nothing
@@ -290,21 +294,19 @@ func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.
 	if ifNotExists {
 		queryBuilder.WriteString("IF NOT EXISTS ")
 	}
-	queryBuilder.WriteString("\"")
-	queryBuilder.WriteString(tableName)
-	queryBuilder.WriteString("\" (")
+	queryBuilder.WriteString(quoteIdentifier(tableName))
+	queryBuilder.WriteString(" (")
 
 	for i, field := range schema.Fields() {
 		if i > 0 {
 			queryBuilder.WriteString(", ")
 		}
 
-		queryBuilder.WriteString("\"")
-		queryBuilder.WriteString(field.Name)
-		queryBuilder.WriteString("\" ")
+		queryBuilder.WriteString(quoteIdentifier(field.Name))
+		queryBuilder.WriteString(" ")
 
 		// Convert Arrow type to Trino type
-		trinoType := c.arrowToTrinoType(field.Type, field.Nullable)
+		trinoType := c.arrowToTrinoType(field.Type)
 		queryBuilder.WriteString(trinoType)
 	}
 
@@ -317,14 +319,14 @@ func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.
 
 // dropTable drops a Trino table
 func (c *trinoConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string) error {
-	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS \"%s\"", tableName)
+	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", quoteIdentifier(tableName))
 	_, err := conn.ExecContext(ctx, dropSQL)
 	return err
 }
 
 
 // arrowToTrinoType converts Arrow data type to Trino column type
-func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType, nullable bool) string {
+func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType) string {
 	var trinoType string
 
 	switch arrowType := arrowType.(type) {
@@ -360,9 +362,10 @@ func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType, nullabl
 		case arrow.Microsecond:
 			precision = "(6)"
 		case arrow.Nanosecond:
-			precision = "(6)" // MySQL max is 6 digits
+			precision = "(9)"
 		default:
-			precision = ""
+			// should never happen, but panic here for defensive programming
+			panic(fmt.Sprintf("unexpected Arrow timestamp unit: %v", arrowType.Unit))
 		}
 
 		// Use TIMESTAMP for timezone-naive timestamps, TIMESTAMP WITH TIME ZONE for timezone-aware
@@ -382,7 +385,8 @@ func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType, nullabl
 		case arrow.Millisecond:
 			trinoType = "TIME(3)"
 		default:
-			trinoType = "TIME"
+			// should never happen, but panic here for defensive programming
+			panic(fmt.Sprintf("unexpected Time32 unit: %v", arrowType.Unit))
 		}
 
 	case *arrow.Time64Type:
@@ -391,15 +395,14 @@ func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType, nullabl
 		case arrow.Microsecond:
 			trinoType = "TIME(6)"
 		case arrow.Nanosecond:
-			trinoType = "TIME(6)" // Trino max is 6 digits
+			trinoType = "TIME(9)"
 		default:
-			trinoType = "TIME"
+			// should never happen, but panic here for defensive programming
+			panic(fmt.Sprintf("unexpected Time64 unit: %v", arrowType.Unit))
 		}
-	case *arrow.Decimal32Type, *arrow.Decimal64Type, *arrow.Decimal128Type, *arrow.Decimal256Type:
+	case arrow.DecimalType:
 		if decType, ok := arrowType.(arrow.DecimalType); ok {
 			trinoType = fmt.Sprintf("DECIMAL(%d,%d)", decType.GetPrecision(), decType.GetScale())
-		} else {
-			trinoType = "DECIMAL(10,2)"
 		}
 	default:
 		// Default to VARCHAR for unknown types
@@ -409,4 +412,18 @@ func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType, nullabl
 	// Note: In Trino, columns are nullable by default, and NOT NULL constraint is specified separately
 	// For simplicity, we don't add NULL/NOT NULL here since Trino handles nullability differently
 	return trinoType
+}
+
+// ListTableTypes implements driverbase.TableTypeLister interface
+func (c *trinoConnectionImpl) ListTableTypes(ctx context.Context) ([]string, error) {
+	// Trino supports these standard table types
+	return []string{
+		"BASE TABLE", // Regular tables
+		"VIEW",       // Views
+	}, nil
+}
+
+// quoteIdentifier properly quotes a SQL identifier, escaping any internal quotes
+func quoteIdentifier(name string) string {
+	return "\"" + strings.ReplaceAll(name, "\"", "\"\"") + "\""
 }
