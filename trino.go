@@ -45,7 +45,7 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 	typeName := strings.ToUpper(colType.DatabaseTypeName)
 
 	// trino go client does not provide clean way to get nullability so assume every column is always nullable
-	colType.Nullable = true 
+	colType.Nullable = true
 
 	switch typeName {
 	case "TIMESTAMP WITH TIME ZONE":
