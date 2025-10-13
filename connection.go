@@ -207,14 +207,14 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 		err = errors.Join(err, stmt.Close())
 	}()
 
+	params := make([]any, len(schema.Fields()))
+
 	// Process each record batch in the stream
 	for stream.Next() {
 		recordBatch := stream.RecordBatch()
 
 		// Insert each row
 		rowsInBatch := int(recordBatch.NumRows())
-		params := make([]any, recordBatch.NumCols())
-
 		for rowIdx := range rowsInBatch {
 			for colIdx := range int(recordBatch.NumCols()) {
 				arr := recordBatch.Column(colIdx)
