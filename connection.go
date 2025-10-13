@@ -213,9 +213,9 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 
 		// Insert each row
 		rowsInBatch := int(recordBatch.NumRows())
-		for rowIdx := range rowsInBatch {
-			params := make([]any, recordBatch.NumCols())
+		params := make([]any, recordBatch.NumCols())
 
+		for rowIdx := range rowsInBatch {
 			for colIdx := range int(recordBatch.NumCols()) {
 				arr := recordBatch.Column(colIdx)
 				field := schema.Field(colIdx)
@@ -425,5 +425,5 @@ func (c *trinoConnectionImpl) ListTableTypes(ctx context.Context) ([]string, err
 
 // quoteIdentifier properly quotes a SQL identifier, escaping any internal quotes
 func quoteIdentifier(name string) string {
-	return "\"" + strings.ReplaceAll(name, "\"", "\"\"") + "\""
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
