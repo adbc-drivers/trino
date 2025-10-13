@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
 from pathlib import Path
 
 from adbc_drivers_validation import model
@@ -22,8 +23,8 @@ class TrinoQuirks(model.DriverQuirks):
     driver = "adbc_driver_trino"
     driver_name = "ADBC Driver Foundry Driver for Trino"
     vendor_name = "Trino"
-    vendor_version = "Trino 476"
-    short_version = "476"
+    vendor_version = re.compile(r"Trino [0-9]+")
+    short_version = "4nn"
     features = model.DriverFeatures(
         connection_get_table_schema=True,
         connection_transactions=False,
