@@ -137,13 +137,7 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 		wrappedColType := sqlwrapper.ColumnType{
 			Name:             colType.Name(),
 			DatabaseTypeName: colType.DatabaseTypeName(),
-			Nullable:         true, // Default to nullable
-		}
-
-		// TODO: trino driver does not support colType.Nullable.
-		// This code is here as a placeholder and a reminder to fix it when we accurately deal with nullability
-		if nullable, ok := colType.Nullable(); ok {
-			wrappedColType.Nullable = nullable
+			Nullable:         true, // Assume every column in always nullable since trino go client does not provide clean way to get nullability.
 		}
 
 		// Add precision and scale if available
@@ -409,8 +403,7 @@ func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType) string 
 		trinoType = "VARCHAR"
 	}
 
-	// Note: In Trino, columns are nullable by default, and NOT NULL constraint is specified separately
-	// For simplicity, we don't add NULL/NOT NULL here since Trino handles nullability differently
+	// Note: In Trino, columns are nullable by default, and assume that all columns are nullable since trino go client does not provide clean way to get nullability.
 	return trinoType
 }
 

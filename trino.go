@@ -43,7 +43,9 @@ type trinoTypeConverter struct {
 func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType) (arrow.DataType, bool, arrow.Metadata, error) {
 	// Handle Trino-specific type mappings first
 	typeName := strings.ToUpper(colType.DatabaseTypeName)
-	nullable := colType.Nullable
+
+	// trino go client does not provide clean way to get nullability so assume every column is always nullable
+	colType.Nullable = true
 
 	switch typeName {
 	case "TIMESTAMP WITH TIME ZONE":
@@ -70,14 +72,14 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
-		return timestampType, nullable, metadata, nil
+		return timestampType, colType.Nullable, metadata, nil
 	case "REAL":
 		// Trino uses REAL for float32/single precision
 		metadata := arrow.MetadataFrom(map[string]string{
 			sqlwrapper.MetaKeyDatabaseTypeName: colType.DatabaseTypeName,
 			sqlwrapper.MetaKeyColumnName:       colType.Name,
 		})
-		return arrow.PrimitiveTypes.Float32, nullable, metadata, nil
+		return arrow.PrimitiveTypes.Float32, colType.Nullable, metadata, nil
 	}
 
 	// For all other types, fall back to default conversion

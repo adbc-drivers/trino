@@ -376,9 +376,7 @@ func (s *TrinoTests) TestSelect() {
 				{
 					Name:     "istrue",
 					Type:     arrow.FixedWidthTypes.Boolean,
-					// Trino doesn't support ColumnType.Nullable() and returns false for everything,
-					// therefore even though the column is nullable by default, it is returning false
-					Nullable: false,
+					Nullable: true,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "istrue",
 						"sql.database_type_name": "BOOLEAN",
@@ -394,7 +392,7 @@ func (s *TrinoTests) TestSelect() {
 				{
 					Name:     "value",
 					Type:     arrow.PrimitiveTypes.Int8,
-					Nullable: false,
+					Nullable: true,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "value",
 						"sql.database_type_name": "TINYINT",
@@ -410,7 +408,7 @@ func (s *TrinoTests) TestSelect() {
 				{
 					Name:     "theanswer",
 					Type:     arrow.PrimitiveTypes.Int32,
-					Nullable: false,
+					Nullable: true,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "theanswer",
 						"sql.database_type_name": "INTEGER",
@@ -426,7 +424,7 @@ func (s *TrinoTests) TestSelect() {
 				{
 					Name:     "theanswer",
 					Type:     arrow.PrimitiveTypes.Int64,
-					Nullable: false,
+					Nullable: true,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "theanswer",
 						"sql.database_type_name": "BIGINT",
@@ -442,7 +440,7 @@ func (s *TrinoTests) TestSelect() {
 				{
 					Name:     "value",
 					Type:     arrow.PrimitiveTypes.Float32,
-					Nullable: false,
+					Nullable: true,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "value",
 						"sql.database_type_name": "REAL",
@@ -458,7 +456,7 @@ func (s *TrinoTests) TestSelect() {
 				{
 					Name:     "value",
 					Type:     arrow.PrimitiveTypes.Float64,
-					Nullable: false,
+					Nullable: true,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "value",
 						"sql.database_type_name": "DOUBLE",
@@ -474,7 +472,7 @@ func (s *TrinoTests) TestSelect() {
 				{
 					Name:     "greeting",
 					Type:     arrow.BinaryTypes.String,
-					Nullable: false,
+					Nullable: true,
 					Metadata: arrow.MetadataFrom(map[string]string{
 						"sql.column_name":        "greeting",
 						"sql.database_type_name": "VARCHAR",
