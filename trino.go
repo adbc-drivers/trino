@@ -106,8 +106,6 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 		return &trinoBinaryInserter{builder: builder.(array.BinaryLikeBuilder)}, nil
 	case *arrow.Date32Type:
 		return &date32Inserter{builder: builder.(*array.Date32Builder)}, nil
-	case *arrow.Date64Type:
-		return &date64Inserter{builder: builder.(*array.Date64Builder)}, nil
 	default:
 		// For all other types, use default inserter
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
@@ -208,35 +206,6 @@ func (ins *date32Inserter) AppendValue(sqlValue any) error {
 	year, month, day := t.Date()
 	utcDate := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 	val := arrow.Date32FromTime(utcDate)
-
-	ins.builder.Append(val)
-	return nil
-}
-
-type date64Inserter struct {
-	builder *array.Date64Builder
-}
-
-func (ins *date64Inserter) AppendValue(sqlValue any) error {
-	unwrapped, err := unwrap(sqlValue)
-	if err != nil {
-		return err
-	}
-	if unwrapped == nil {
-		ins.builder.AppendNull()
-		return nil
-	}
-
-	t, ok := unwrapped.(time.Time)
-	if !ok {
-		return fmt.Errorf("expected time.Time for date64 inserter, got %T", sqlValue)
-	}
-
-	// Convert to date without timezone conversion
-	// Extract just the date components and calculate days since epoch manually
-	year, month, day := t.Date()
-	utcDate := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
-	val := arrow.Date64FromTime(utcDate)
 
 	ins.builder.Append(val)
 	return nil
