@@ -1,0 +1,10 @@
+{
+    "format": "+s",
+    "children": [
+        {
+            "name": "res",
+            "format": "u",
+            "flags": ["nullable"]
+        }
+    ]
+}
