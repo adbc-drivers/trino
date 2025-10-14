@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 	"math/big"
+	"database/sql/driver"
 
 	// register the "trino" driver with database/sql
 	_ "github.com/trinodb/trino-go-client/trino"
@@ -103,10 +104,19 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 	case *arrow.BinaryType, *arrow.LargeBinaryType, *arrow.BinaryViewType, *arrow.FixedSizeBinaryType:
 		// Use custom binary inserter that handles base64 decoding from ConvertArrowToGo
 		return &trinoBinaryInserter{builder: builder.(array.BinaryLikeBuilder)}, nil
+	case *arrow.Date32Type:
+		return &date32Inserter{builder: builder.(*array.Date32Builder)}, nil
 	default:
 		// For all other types, use default inserter
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
 	}
+}
+
+func unwrap(val any) (any, error) {
+	if v, ok := val.(driver.Valuer); ok {
+		return v.Value()
+	}
+	return val, nil
 }
 
 // trinoTimestampInserter handles Trino's timezone-naive TIMESTAMP specially
@@ -116,12 +126,16 @@ type trinoTimestampInserter struct {
 }
 
 func (ins *trinoTimestampInserter) AppendValue(sqlValue any) error {
-	if sqlValue == nil {
+	unwrapped, err := unwrap(sqlValue)
+	if err != nil {
+		return err
+	}
+	if unwrapped == nil {
 		ins.builder.AppendNull()
 		return nil
 	}
 
-	t, ok := sqlValue.(time.Time)
+	t, ok := unwrapped.(time.Time)
 	if !ok {
 		return fmt.Errorf("expected time.Time for timestamp, got %T", sqlValue)
 	}
@@ -145,12 +159,16 @@ type trinoBinaryInserter struct {
 }
 
 func (ins *trinoBinaryInserter) AppendValue(sqlValue any) error {
-	if sqlValue == nil {
+	unwrapped, err := unwrap(sqlValue)
+	if err != nil {
+		return err
+	}
+	if unwrapped == nil {
 		ins.builder.AppendNull()
 		return nil
 	}
 
-	t, ok := sqlValue.(string)
+	t, ok := unwrapped.(string)
 	if !ok {
 		return fmt.Errorf("expected string for trino binary inserter, got %T", sqlValue)
 	}
@@ -160,6 +178,36 @@ func (ins *trinoBinaryInserter) AppendValue(sqlValue any) error {
 		return fmt.Errorf("failed to decode base64 binary data: %w", err)
 	}
 	ins.builder.Append(decoded)
+	return nil
+}
+
+// Date inserters
+type date32Inserter struct {
+	builder *array.Date32Builder
+}
+
+func (ins *date32Inserter) AppendValue(sqlValue any) error {
+	unwrapped, err := unwrap(sqlValue)
+	if err != nil {
+		return err
+	}
+	if unwrapped == nil {
+		ins.builder.AppendNull()
+		return nil
+	}
+
+	t, ok := unwrapped.(time.Time)
+	if !ok {
+		return fmt.Errorf("expected time.Time for date32 inserter, got %T", sqlValue)
+	}
+
+	// Convert to date without timezone conversion
+	// Extract just the date components and calculate days since epoch manually
+	year, month, day := t.Date()
+	utcDate := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	val := arrow.Date32FromTime(utcDate)
+
+	ins.builder.Append(val)
 	return nil
 }
 
