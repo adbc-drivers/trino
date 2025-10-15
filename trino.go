@@ -35,6 +35,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/apache/arrow-go/v18/arrow/extensions"
+	"github.com/google/uuid"
 )
 
 // TrinoTypeConverter provides Trino-specific type conversion enhancements
@@ -503,12 +504,12 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		// Check metadata for UUID extension type indication
 		if extName, exists := field.Metadata.GetValue("ARROW:extension:name"); exists && extName == "arrow.uuid" {
 			binaryValue := a.Value(index)
-			// Convert 16-byte binary to UUID string format
-			uuidStr, err := formatBinaryAsUUIDString(binaryValue)
+
+			uuidVal, err := uuid.FromBytes(binaryValue)
 			if err != nil {
 				return nil, err
 			}
-			return uuidStr, nil
+			return uuidVal.String(), nil
 		}
 
 		// For non-UUID FixedSizeBinary, fall through to default
@@ -529,14 +530,6 @@ func convertDecimalToTrinoNumericFromInt(value *big.Int, scale int32) trino.Nume
 	return trino.Numeric(rat.FloatString(int(scale)))
 }
 
-// formatBinaryAsUUIDString converts a 16-byte binary to UUID string format
-func formatBinaryAsUUIDString(b []byte) (string, error) {
-    if len(b) != 16 {
-        return "", fmt.Errorf("UUID binary data must be exactly 16 bytes, got %d", len(b))
-    }
-    return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-        b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
-}
 
 // trinoConnectionImpl extends sqlwrapper connection with DbObjectsEnumerator
 type trinoConnectionImpl struct {
