@@ -1,1 +1,0 @@
-SELECT res FROM test_timetz ORDER BY idx

@@ -1,1 +1,0 @@
-INSERT INTO test_timetz VALUES ($1)

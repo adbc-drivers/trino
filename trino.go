@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"math/big"
@@ -33,6 +34,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/apache/arrow-go/v18/arrow/extensions"
 )
 
 // TrinoTypeConverter provides Trino-specific type conversion enhancements
@@ -77,46 +79,19 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 			sqlwrapper.MetaKeyColumnName:       colType.Name,
 		})
 		return arrow.PrimitiveTypes.Float32, colType.Nullable, metadata, nil
-	case "TIME WITH TIME ZONE":
-		// Trino's TIME WITH TIME ZONE stores time of day with timezone offset
-		// Map to Arrow Time32/Time64 based on precision, similar to TIMESTAMP WITH TIME ZONE approach
-		var timeType arrow.DataType
-		metadataMap := map[string]string{
-			sqlwrapper.MetaKeyDatabaseTypeName: colType.DatabaseTypeName,
-			sqlwrapper.MetaKeyColumnName:       colType.Name,
-		}
-
-		if colType.Precision != nil {
-			// precision represents fractional seconds digits (0-9)
-			precision := *colType.Precision
-			metadataMap[sqlwrapper.MetaKeyFractionalSecondsPrecision] = fmt.Sprintf("%d", precision)
-			timeUnit := convertPrecisionToTimeUnit(precision)
-
-			if timeUnit == arrow.Second || timeUnit == arrow.Millisecond {
-				timeType = &arrow.Time32Type{Unit: timeUnit}
-			} else {
-				timeType = &arrow.Time64Type{Unit: timeUnit}
-			}
-		} else {
-			// No precision info available, default to microseconds (most common)
-			timeType = arrow.FixedWidthTypes.Time64us
-		}
-
-		metadata := arrow.MetadataFrom(metadataMap)
-		return timeType, colType.Nullable, metadata, nil
 	case "INTERVAL YEAR TO MONTH":
 		// Trino's INTERVAL YEAR TO MONTH is returned as a string (e.g., "2-6" for 2 years 6 months)
-		// Arrow doesn't have a native INTERVAL YEAR TO MONTH type, so map to string
+		// Map to Arrow's MonthDayNanoInterval (with days=0, nanoseconds=0) since PyArrow doesn't have year-month interval support
 		metadataMap := map[string]string{
 			sqlwrapper.MetaKeyDatabaseTypeName: colType.DatabaseTypeName,
 			sqlwrapper.MetaKeyColumnName:       colType.Name,
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
-		return arrow.BinaryTypes.String, colType.Nullable, metadata, nil
+		return arrow.FixedWidthTypes.MonthDayNanoInterval, colType.Nullable, metadata, nil
 	case "INTERVAL DAY TO SECOND":
 		// Trino's INTERVAL DAY TO SECOND is returned as a string (e.g., "1 23:59:59.999" for 1 day 23:59:59.999)
-		// Arrow doesn't have a native INTERVAL DAY TO SECOND type, so map to string
+		// Map to Arrow's MonthDayNanoInterval (with months=0)
 		metadataMap := map[string]string{
 			sqlwrapper.MetaKeyDatabaseTypeName: colType.DatabaseTypeName,
 			sqlwrapper.MetaKeyColumnName:       colType.Name,
@@ -129,7 +104,7 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
-		return arrow.BinaryTypes.String, colType.Nullable, metadata, nil
+		return arrow.FixedWidthTypes.MonthDayNanoInterval, colType.Nullable, metadata, nil
 	case "IPADDRESS":
 		// Trino's IPADDRESS type stores IPv4 and IPv6 addresses
 		// Returned as string representation (e.g., "192.168.1.1", "::1", "2001:db8::1")
@@ -151,8 +126,9 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
-		return arrow.BinaryTypes.String, colType.Nullable, metadata, nil
+		return extensions.NewUUIDType(), colType.Nullable, metadata, nil
 	}
+
 
 	// For all other types, fall back to default conversion
 	return m.DefaultTypeConverter.ConvertRawColumnType(colType)
@@ -186,26 +162,12 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 		return &trinoBinaryInserter{builder: builder.(array.BinaryLikeBuilder)}, nil
 	case *arrow.Date32Type:
 		return &date32Inserter{builder: builder.(*array.Date32Builder)}, nil
-	case *arrow.Time32Type:
-		// If this is a TIME WITH TIME ZONE column, use a custom inserter to normalize values to UTC.
-		if dbTypeName, exists := field.Metadata.GetValue(sqlwrapper.MetaKeyDatabaseTypeName); exists && dbTypeName == "TIME WITH TIME ZONE" {
-			return &timeWithTimeZoneInserter32{
-				builder: builder.(*array.Time32Builder),
-				unit:    fieldType.Unit,
-			}, nil
-		}
-		// For regular TIME, use default inserter
-		return m.DefaultTypeConverter.CreateInserter(field, builder)
-	case *arrow.Time64Type:
-		// If this is a TIME WITH TIME ZONE column, use a custom inserter to normalize values to UTC.
-		if dbTypeName, exists := field.Metadata.GetValue(sqlwrapper.MetaKeyDatabaseTypeName); exists && dbTypeName == "TIME WITH TIME ZONE" {
-			return &timeWithTimeZoneInserter64{
-				builder: builder.(*array.Time64Builder),
-				unit:    fieldType.Unit,
-			}, nil
-		}
-		// For regular TIME, use default inserter
-		return m.DefaultTypeConverter.CreateInserter(field, builder)
+	case *arrow.MonthDayNanoIntervalType:
+		// Interval types require custom inserter to parse Trino interval strings
+		return &intervalInserter{
+			builder: builder.(*array.MonthDayNanoIntervalBuilder),
+			field:   field,
+		}, nil
 	default:
 		// For all other types, use default inserter
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
@@ -281,107 +243,6 @@ func (ins *trinoBinaryInserter) AppendValue(sqlValue any) error {
 	return nil
 }
 
-// TIME WITH TIME ZONE inserters
-type timeWithTimeZoneInserter32 struct {
-	builder *array.Time32Builder
-	unit    arrow.TimeUnit
-}
-
-func (ins *timeWithTimeZoneInserter32) AppendValue(sqlValue any) error {
-	unwrapped, err := unwrap(sqlValue)
-	if err != nil {
-		return err
-	}
-	if unwrapped == nil {
-		ins.builder.AppendNull()
-		return nil
-	}
-
-	// When Trino Go client returns TIME WITH TIME ZONE we need to turn it into UTC
-	timeValue, err := convertTimeWithTimeZoneToUTC32(unwrapped, ins.unit)
-	if err != nil {
-		return fmt.Errorf("failed to convert TIME WITH TIME ZONE: %w", err)
-	}
-
-	ins.builder.Append(timeValue)
-	return nil
-}
-
-// convertTimeWithTimeZoneToUTC32 converts TIME WITH TIME ZONE to UTC equivalent Time32 value
-func convertTimeWithTimeZoneToUTC32(sqlValue any, unit arrow.TimeUnit) (arrow.Time32, error) {
-	// Trino Go client returns time.Time with timezone information
-	t, ok := sqlValue.(time.Time)
-	if !ok {
-		return 0, fmt.Errorf("expected time.Time for TIME WITH TIME ZONE, got %T", sqlValue)
-	}
-
-	// Convert to UTC
-	utcTime := t.UTC()
-
-	// Extract time-of-day in UTC and convert to Time32 units
-	seconds := utcTime.Hour()*3600 + utcTime.Minute()*60 + utcTime.Second()
-	nanos := utcTime.Nanosecond()
-
-	switch unit {
-	case arrow.Second:
-		return arrow.Time32(seconds), nil
-	case arrow.Millisecond:
-		return arrow.Time32(seconds*1000 + nanos/1000000), nil
-	default:
-		return 0, fmt.Errorf("unsupported Time32 unit: %v", unit)
-	}
-}
-
-type timeWithTimeZoneInserter64 struct {
-	builder *array.Time64Builder
-	unit    arrow.TimeUnit
-}
-
-func (ins *timeWithTimeZoneInserter64) AppendValue(sqlValue any) error {
-	unwrapped, err := unwrap(sqlValue)
-	if err != nil {
-		return err
-	}
-	if unwrapped == nil {
-		ins.builder.AppendNull()
-		return nil
-	}
-
-	// When Trino Go client returns TIME WITH TIME ZONE we need to turn it into UTC
-	timeValue, err := convertTimeWithTimeZoneToUTC64(unwrapped, ins.unit)
-	if err != nil {
-		return fmt.Errorf("failed to convert TIME WITH TIME ZONE: %w", err)
-	}
-
-	ins.builder.Append(timeValue)
-	return nil
-}
-
-// convertTimeWithTimeZoneToUTC64 converts TIME WITH TIME ZONE to UTC equivalent Time64 value
-func convertTimeWithTimeZoneToUTC64(sqlValue any, unit arrow.TimeUnit) (arrow.Time64, error) {
-	// Trino Go client returns time.Time with timezone information
-	t, ok := sqlValue.(time.Time)
-	if !ok {
-		return 0, fmt.Errorf("expected time.Time for TIME WITH TIME ZONE, got %T", sqlValue)
-	}
-
-	// Convert to UTC
-	utcTime := t.UTC()
-
-	// Extract time-of-day in UTC and convert to Time64 units
-	seconds := utcTime.Hour()*3600 + utcTime.Minute()*60 + utcTime.Second()
-	nanos := utcTime.Nanosecond()
-
-	switch unit {
-	case arrow.Microsecond:
-		return arrow.Time64(int64(seconds)*1000000 + int64(nanos)/1000), nil
-	case arrow.Nanosecond:
-		return arrow.Time64(int64(seconds)*1000000000 + int64(nanos)), nil
-	default:
-		return 0, fmt.Errorf("unsupported Time64 unit: %v", unit)
-	}
-}
-
 // Date inserters
 type date32Inserter struct {
 	builder *array.Date32Builder
@@ -410,6 +271,141 @@ func (ins *date32Inserter) AppendValue(sqlValue any) error {
 
 	ins.builder.Append(val)
 	return nil
+}
+
+// intervalInserter handles interval values - converts Trino interval strings to MonthDayNanoInterval
+type intervalInserter struct {
+	builder *array.MonthDayNanoIntervalBuilder
+	field   *arrow.Field
+}
+
+func (ins *intervalInserter) AppendValue(sqlValue any) error {
+	unwrapped, err := unwrap(sqlValue)
+	if err != nil {
+		return err
+	}
+	if unwrapped == nil {
+		ins.builder.AppendNull()
+		return nil
+	}
+
+	// Interval comes from Trino as a string
+	intervalStr, ok := unwrapped.(string)
+	if !ok {
+		return fmt.Errorf("expected string for interval, got %T", sqlValue)
+	}
+
+	// Parse based on the database type name from metadata
+	dbTypeName, exists := ins.field.Metadata.GetValue(sqlwrapper.MetaKeyDatabaseTypeName)
+	if !exists {
+		return fmt.Errorf("no database type name in field metadata")
+	}
+
+	var interval arrow.MonthDayNanoInterval
+	switch dbTypeName {
+	case "INTERVAL YEAR TO MONTH":
+		interval, err = parseYearToMonth(intervalStr)
+	case "INTERVAL DAY TO SECOND":
+		interval, err = parseDayToSecond(intervalStr)
+	default:
+		return fmt.Errorf("unsupported interval type: %s", dbTypeName)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to parse interval '%s': %w", intervalStr, err)
+	}
+
+	ins.builder.Append(interval)
+	return nil
+}
+
+// parseYearToMonth parses "2-6" format (2 years 6 months) to MonthDayNanoInterval
+func parseYearToMonth(intervalStr string) (arrow.MonthDayNanoInterval, error) {
+	parts := strings.Split(intervalStr, "-")
+	if len(parts) != 2 {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid YEAR TO MONTH format, expected 'Y-M'")
+	}
+
+	years, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid years: %w", err)
+	}
+
+	months, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid months: %w", err)
+	}
+
+	totalMonths := int32(years*12 + months)
+	return arrow.MonthDayNanoInterval{
+		Months:      totalMonths,
+		Days:        0,
+		Nanoseconds: 0,
+	}, nil
+}
+
+// parseDayToSecond parses "1 23:59:59.999" format to MonthDayNanoInterval
+func parseDayToSecond(intervalStr string) (arrow.MonthDayNanoInterval, error) {
+	// Split "D HH:MM:SS.sss" format
+	parts := strings.Fields(intervalStr)
+	if len(parts) != 2 {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid DAY TO SECOND format, expected 'D HH:MM:SS.sss'")
+	}
+
+	days, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid days: %w", err)
+	}
+
+	// Parse time part HH:MM:SS.sss
+	timeParts := strings.Split(parts[1], ":")
+	if len(timeParts) != 3 {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid time format, expected 'HH:MM:SS.sss'")
+	}
+
+	hours, err := strconv.Atoi(timeParts[0])
+	if err != nil {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid hours: %w", err)
+	}
+
+	minutes, err := strconv.Atoi(timeParts[1])
+	if err != nil {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid minutes: %w", err)
+	}
+
+	// Parse seconds with fractional part
+	secondsParts := strings.Split(timeParts[2], ".")
+	seconds, err := strconv.Atoi(secondsParts[0])
+	if err != nil {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid seconds: %w", err)
+	}
+
+	var nanos int64 = 0
+	if len(secondsParts) > 1 {
+		// Convert fractional seconds to nanoseconds
+		fracStr := secondsParts[1]
+		// Pad or truncate to 9 digits (nanoseconds)
+		for len(fracStr) < 9 {
+			fracStr += "0"
+		}
+		if len(fracStr) > 9 {
+			fracStr = fracStr[:9]
+		}
+		fracNanos, err := strconv.ParseInt(fracStr, 10, 64)
+		if err != nil {
+			return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid fractional seconds: %w", err)
+		}
+		nanos = fracNanos
+	}
+
+	// Convert time to total nanoseconds
+	timeNanos := int64(hours*3600+minutes*60+seconds)*1_000_000_000 + nanos
+
+	return arrow.MonthDayNanoInterval{
+		Months:      0,
+		Days:        int32(days),
+		Nanoseconds: timeNanos,
+	}, nil
 }
 
 // ConvertArrowToGo implements Trino-specific Arrow value to Go value conversion
@@ -477,6 +473,21 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		val := a.Value(index)
 		return base64.StdEncoding.EncodeToString(val), nil
 
+	case *array.FixedSizeBinary:
+		// Check metadata for UUID extension type indication
+		if extName, exists := field.Metadata.GetValue("ARROW:extension:name"); exists && extName == "arrow.uuid" {
+			binaryValue := a.Value(index)
+			// Convert 16-byte binary to UUID string format
+			uuidStr, err := formatBinaryAsUUIDString(binaryValue)
+			if err != nil {
+				return nil, err
+			}
+			return uuidStr, nil
+		}
+
+		// For non-UUID FixedSizeBinary, fall through to default
+		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
+
 	default:
 		// For all other types, use default conversion
 		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
@@ -490,6 +501,15 @@ func convertDecimalToTrinoNumericFromInt(value *big.Int, scale int32) trino.Nume
 	rat := new(big.Rat).SetFrac(value, scaleFactor)
 
 	return trino.Numeric(rat.FloatString(int(scale)))
+}
+
+// formatBinaryAsUUIDString converts a 16-byte binary to UUID string format
+func formatBinaryAsUUIDString(b []byte) (string, error) {
+    if len(b) != 16 {
+        return "", fmt.Errorf("UUID binary data must be exactly 16 bytes, got %d", len(b))
+    }
+    return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+        b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
 // trinoConnectionImpl extends sqlwrapper connection with DbObjectsEnumerator
@@ -524,11 +544,12 @@ func (f *trinoConnectionFactory) CreateConnection(
 
 // NewDriver constructs the ADBC Driver for "trino".
 func NewDriver(alloc memory.Allocator) adbc.Driver {
+	vendorName := "Trino"
 	typeConverter := &trinoTypeConverter{
-		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{},
+		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: vendorName},
 	}
 
-	driver := sqlwrapper.NewDriver(alloc, "trino", "Trino", NewTrinoDBFactory(), typeConverter).
+	driver := sqlwrapper.NewDriver(alloc, "trino", vendorName, NewTrinoDBFactory(), typeConverter).
 		WithConnectionFactory(&trinoConnectionFactory{})
 	driver.DriverInfo.MustRegister(map[adbc.InfoCode]any{
 		adbc.InfoDriverName:      "ADBC Driver Foundry Driver for Trino",

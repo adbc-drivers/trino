@@ -3,8 +3,11 @@
     "children": [
         {
             "name": "res",
-            "format": "u",
-            "flags": ["nullable"]
+            "format": "w:16",
+            "flags": ["nullable"],
+            "metadata": {
+                "ARROW:extension:name": "arrow.uuid"
+            }
         }
     ]
 }

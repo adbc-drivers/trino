@@ -3,7 +3,7 @@
     "children": [
         {
             "name": "res",
-            "format": "u",
+            "format": "tin",
             "flags": ["nullable"]
         }
     ]
