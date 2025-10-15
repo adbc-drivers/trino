@@ -164,10 +164,22 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 		return &date32Inserter{builder: builder.(*array.Date32Builder)}, nil
 	case *arrow.MonthDayNanoIntervalType:
 		// Interval types require custom inserter to parse Trino interval strings
-		return &intervalInserter{
-			builder: builder.(*array.MonthDayNanoIntervalBuilder),
-			field:   field,
-		}, nil
+		dbTypeName, exists := field.Metadata.GetValue(sqlwrapper.MetaKeyDatabaseTypeName)
+		if !exists {
+			return nil, fmt.Errorf("no database type name in field metadata for interval type")
+		}
+		switch dbTypeName {
+		case "INTERVAL YEAR TO MONTH":
+			return &yearToMonthIntervalInserter{
+				builder: builder.(*array.MonthDayNanoIntervalBuilder),
+			}, nil
+		case "INTERVAL DAY TO SECOND":
+			return &dayToSecondIntervalInserter{
+				builder: builder.(*array.MonthDayNanoIntervalBuilder),
+			}, nil
+		default:
+			return nil, fmt.Errorf("unsupported interval type: %s", dbTypeName)
+		}
 	default:
 		// For all other types, use default inserter
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
@@ -273,13 +285,12 @@ func (ins *date32Inserter) AppendValue(sqlValue any) error {
 	return nil
 }
 
-// intervalInserter handles interval values - converts Trino interval strings to MonthDayNanoInterval
-type intervalInserter struct {
+// yearToMonthIntervalInserter handles INTERVAL YEAR TO MONTH values
+type yearToMonthIntervalInserter struct {
 	builder *array.MonthDayNanoIntervalBuilder
-	field   *arrow.Field
 }
 
-func (ins *intervalInserter) AppendValue(sqlValue any) error {
+func (ins *yearToMonthIntervalInserter) AppendValue(sqlValue any) error {
 	unwrapped, err := unwrap(sqlValue)
 	if err != nil {
 		return err
@@ -295,24 +306,9 @@ func (ins *intervalInserter) AppendValue(sqlValue any) error {
 		return fmt.Errorf("expected string for interval, got %T", sqlValue)
 	}
 
-	// Parse based on the database type name from metadata
-	dbTypeName, exists := ins.field.Metadata.GetValue(sqlwrapper.MetaKeyDatabaseTypeName)
-	if !exists {
-		return fmt.Errorf("no database type name in field metadata")
-	}
-
-	var interval arrow.MonthDayNanoInterval
-	switch dbTypeName {
-	case "INTERVAL YEAR TO MONTH":
-		interval, err = parseYearToMonth(intervalStr)
-	case "INTERVAL DAY TO SECOND":
-		interval, err = parseDayToSecond(intervalStr)
-	default:
-		return fmt.Errorf("unsupported interval type: %s", dbTypeName)
-	}
-
+	interval, err := parseYearToMonth(intervalStr)
 	if err != nil {
-		return fmt.Errorf("failed to parse interval '%s': %w", intervalStr, err)
+		return fmt.Errorf("failed to parse YEAR TO MONTH interval '%s': %w", intervalStr, err)
 	}
 
 	ins.builder.Append(interval)
@@ -342,6 +338,36 @@ func parseYearToMonth(intervalStr string) (arrow.MonthDayNanoInterval, error) {
 		Days:        0,
 		Nanoseconds: 0,
 	}, nil
+}
+
+// dayToSecondIntervalInserter handles INTERVAL DAY TO SECOND values
+type dayToSecondIntervalInserter struct {
+	builder *array.MonthDayNanoIntervalBuilder
+}
+
+func (ins *dayToSecondIntervalInserter) AppendValue(sqlValue any) error {
+	unwrapped, err := unwrap(sqlValue)
+	if err != nil {
+		return err
+	}
+	if unwrapped == nil {
+		ins.builder.AppendNull()
+		return nil
+	}
+
+	// Interval comes from Trino as a string
+	intervalStr, ok := unwrapped.(string)
+	if !ok {
+		return fmt.Errorf("expected string for interval, got %T", sqlValue)
+	}
+
+	interval, err := parseDayToSecond(intervalStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse DAY TO SECOND interval '%s': %w", intervalStr, err)
+	}
+
+	ins.builder.Append(interval)
+	return nil
 }
 
 // parseDayToSecond parses "1 23:59:59.999" format to MonthDayNanoInterval
