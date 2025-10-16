@@ -12,21 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Release
+name: Go
 
-# We have to duplicate this workflow because it has access to the GitHub
-# token, so we only want it active on tag pushes.  Unfortunately that does
-# mean the build/test will happen twice.
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/go.yaml"
+      - "go/**"
   push:
+    branches:
+      - main
     tags:
       - "go/v**"
-  workflow_dispatch:
-    inputs:
-      dry_run_tag:
-        description: "Dry run with this tag"
-        required: true
-        type: string
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -35,40 +35,41 @@ permissions:
 
 jobs:
   test:
-    uses: adbc-drivers/dev/.github/workflows/test.yaml@7d18be0bf4de7faa6fcaee579d577c830d8db054
+    uses: adbc-drivers/dev/.github/workflows/test.yaml@5f716d83bfc07fc06f07ff039c96aeb77dd31fb8
     secrets:
       clone_pat: ${{ secrets.CLONE_PAT }}
     with:
       driver: trino
-      release: ${{ github.event_name == 'push' }}
       subdir: go
 
   validate:
-    uses: adbc-drivers/dev/.github/workflows/validate.yaml@7d18be0bf4de7faa6fcaee579d577c830d8db054
+    uses: adbc-drivers/dev/.github/workflows/validate.yaml@5f716d83bfc07fc06f07ff039c96aeb77dd31fb8
     secrets:
-      driver: trino
+      clone_pat: ${{ secrets.CLONE_PAT }}
     with:
       driver: trino
       subdir: go
 
   release:
-    uses: adbc-drivers/dev/.github/workflows/release.yaml@7d18be0bf4de7faa6fcaee579d577c830d8db054
+    uses: adbc-drivers/dev/.github/workflows/release.yaml@5f716d83bfc07fc06f07ff039c96aeb77dd31fb8
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs:
       - test
       - validate
-    if: github.event_name != 'workflow_dispatch'
+    with:
+      subdir: go
     secrets:
       clone_pat: ${{ secrets.CLONE_PAT }}
 
   release-dry-run:
-    uses: adbc-drivers/dev/.github/workflows/release.yaml@7d18be0bf4de7faa6fcaee579d577c830d8db054
+    uses: adbc-drivers/dev/.github/workflows/release.yaml@5f716d83bfc07fc06f07ff039c96aeb77dd31fb8
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
     needs:
       - test
       - validate
-    if: github.event_name == 'workflow_dispatch'
     secrets:
       clone_pat: ${{ secrets.CLONE_PAT }}
     with:
-      driver: trino
       dry_run: true
-      tag: ${{ inputs.dry_run_tag }}
+      subdir: go
+      tag: go/v1000.0.0
