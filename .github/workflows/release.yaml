@@ -20,7 +20,13 @@ name: Release
 on:
   push:
     tags:
-      - "v**"
+      - "go/v**"
+  workflow_dispatch:
+    inputs:
+      dry_run_tag:
+        description: "Dry run with this tag"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -29,30 +35,40 @@ permissions:
 
 jobs:
   test:
-    uses: adbc-drivers/dev/.github/workflows/test.yaml@fe64eee5e66ddf6465460fd9ea0209550067757e
+    uses: adbc-drivers/dev/.github/workflows/test.yaml@7d18be0bf4de7faa6fcaee579d577c830d8db054
     secrets:
-      dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
-      driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
+      clone_pat: ${{ secrets.CLONE_PAT }}
     with:
       driver: trino
-      subdir: .
+      release: ${{ github.event_name == 'push' }}
+      subdir: go
 
   validate:
-    uses: adbc-drivers/dev/.github/workflows/validate.yaml@fe64eee5e66ddf6465460fd9ea0209550067757e
+    uses: adbc-drivers/dev/.github/workflows/validate.yaml@7d18be0bf4de7faa6fcaee579d577c830d8db054
     secrets:
-      dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
-      driverbase_private_key: ${{ secrets.DRIVERBASE_DEPLOY_KEY }}
-      validation_private_key: ${{ secrets.VALIDATION_DEPLOY_KEY }}
+      driver: trino
     with:
       driver: trino
-      subdir: .
+      subdir: go
 
   release:
-    uses: adbc-drivers/dev/.github/workflows/release.yaml@fe64eee5e66ddf6465460fd9ea0209550067757e
+    uses: adbc-drivers/dev/.github/workflows/release.yaml@7d18be0bf4de7faa6fcaee579d577c830d8db054
     needs:
       - test
       - validate
+    if: github.event_name != 'workflow_dispatch'
     secrets:
-      dev_private_key: ${{ secrets.DEV_DEPLOY_KEY }}
+      clone_pat: ${{ secrets.CLONE_PAT }}
+
+  release-dry-run:
+    uses: adbc-drivers/dev/.github/workflows/release.yaml@7d18be0bf4de7faa6fcaee579d577c830d8db054
+    needs:
+      - test
+      - validate
+    if: github.event_name == 'workflow_dispatch'
+    secrets:
+      clone_pat: ${{ secrets.CLONE_PAT }}
     with:
       driver: trino
+      dry_run: true
+      tag: ${{ inputs.dry_run_tag }}

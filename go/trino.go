@@ -16,16 +16,15 @@ package trino
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/base64"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
-	"math/big"
-	"database/sql/driver"
 
 	// register the "trino" driver with database/sql
-	_ "github.com/trinodb/trino-go-client/trino"
 	"github.com/trinodb/trino-go-client/trino"
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
@@ -33,8 +32,8 @@ import (
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/apache/arrow-go/v18/arrow/extensions"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/google/uuid"
 )
 
@@ -129,7 +128,6 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 		metadata := arrow.MetadataFrom(metadataMap)
 		return extensions.NewUUIDType(), colType.Nullable, metadata, nil
 	}
-
 
 	// For all other types, fall back to default conversion
 	return m.DefaultTypeConverter.ConvertRawColumnType(colType)
@@ -529,7 +527,6 @@ func convertDecimalToTrinoNumericFromInt(value *big.Int, scale int32) trino.Nume
 
 	return trino.Numeric(rat.FloatString(int(scale)))
 }
-
 
 // trinoConnectionImpl extends sqlwrapper connection with DbObjectsEnumerator
 type trinoConnectionImpl struct {
