@@ -13,8 +13,7 @@
 # limitations under the License.
 
 .github/pull_request_template.md
-go.sum
-pixi.lock
-validation/pixi.lock
-validation/queries/*/*.json
-validation/queries/*/*.sql
+go/go.sum
+go/pixi.lock
+go/validation/queries/*/*.json
+go/validation/queries/*/*.sql

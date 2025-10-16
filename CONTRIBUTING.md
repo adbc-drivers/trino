@@ -39,7 +39,7 @@ $ go test -tags assert -v ./...
 
 This will not produce a shared library, however; that requires invoking the
 full build script.  You will need [pixi](https://pixi.sh/) installed.  From
-the repository root:
+the `go/` subdirectory:
 
 ```shell
 $ pixi run make
@@ -47,11 +47,11 @@ $ pixi run make
 
 To run the validation suite, you will first need to build the shared library.
 You will also need to set up a Trino instance (see [the validation
-README](./validation/README.md)).  Finally, from the `validation/`
+README](./go/validation/README.md)).  Finally, from the `go/`
 subdirectory:
 
 ```shell
-$ pixi run test
+$ pixi run validate
 ```
 
 This will produce a test report, which can be rendered into a documentation
@@ -81,12 +81,14 @@ When writing the pull request description:
 
 - Ensure the title follows [Conventional
   Commits](https://www.conventionalcommits.org/en/v1.0.0/) format.  The
-  component is not necessary (in general: it should be a directory path
-  relative to the repo root).  Example titles:
+  component should be `go` if it affects the Go driver, or it can be omitted
+  for general maintenance (in general: it should be a directory path relative
+  to the repo root, e.g. `go/auth` would also be valid if that directory
+  existed).  Example titles:
 
-  - `feat: support new data type`
+  - `feat(go): support new data type`
   - `chore: update action versions`
-  - `fix!: return ns instead of us`
+  - `fix!:(go) return ns instead of us`
 
   Ensure that breaking changes are appropriately flagged with a `!` as seen
   in the last example above.

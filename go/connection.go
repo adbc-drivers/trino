@@ -166,7 +166,6 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	return arrow.NewSchema(fields, nil), nil
 }
 
-
 // ExecuteBulkIngest performs Trino bulk ingest using INSERT statements
 func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
 	if stream == nil {
@@ -241,7 +240,6 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 	return totalRowsInserted, nil
 }
 
-
 // getParameterPlaceholder returns the appropriate SQL placeholder for Arrow types that need casting
 func (c *trinoConnectionImpl) getParameterPlaceholder(arrowType arrow.DataType) string {
 	switch arrowType.(type) {
@@ -255,7 +253,6 @@ func (c *trinoConnectionImpl) getParameterPlaceholder(arrowType arrow.DataType) 
 		return "?"
 	}
 }
-
 
 // createTableIfNeeded creates the table based on the ingest mode
 func (c *trinoConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions) error {
@@ -279,7 +276,6 @@ func (c *trinoConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 		return c.Base().ErrorHelper.InvalidArgument("unsupported ingest mode: %s", options.Mode)
 	}
 }
-
 
 // createTable creates a Trino table from Arrow schema
 func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, ifNotExists bool) error {
@@ -310,14 +306,12 @@ func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.
 	return err
 }
 
-
 // dropTable drops a Trino table
 func (c *trinoConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string) error {
 	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", quoteIdentifier(tableName))
 	_, err := conn.ExecContext(ctx, dropSQL)
 	return err
 }
-
 
 // arrowToTrinoType converts Arrow data type to Trino column type
 func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType) string {
@@ -395,9 +389,7 @@ func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType) string 
 			panic(fmt.Sprintf("unexpected Time64 unit: %v", arrowType.Unit))
 		}
 	case arrow.DecimalType:
-		if decType, ok := arrowType.(arrow.DecimalType); ok {
-			trinoType = fmt.Sprintf("DECIMAL(%d,%d)", decType.GetPrecision(), decType.GetScale())
-		}
+		trinoType = fmt.Sprintf("DECIMAL(%d,%d)", arrowType.GetPrecision(), arrowType.GetScale())
 	default:
 		// Default to VARCHAR for unknown types
 		trinoType = "VARCHAR"

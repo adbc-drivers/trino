@@ -12,32 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ifeq ($(shell go env GOOS), linux)
-	RM=rm -f
-	PREFIX=lib
-	SUFFIX=so
-else ifeq ($(shell go env GOOS), darwin)
-	RM=rm -f
-	PREFIX=lib
-	SUFFIX=dylib
-else ifeq ($(shell go env GOOS), windows)
-	RM=del
-	PREFIX=
-	SUFFIX=dll
-else
-	$(error Unsupported OS)
-endif
+# pixi environments
+.pixi
+*.egg-info
 
-DRIVERS := \
-	libadbc_driver_trino.$(SUFFIX)
-
-.PHONY: all clean
-all: $(DRIVERS)
-
-clean:
-	$(RM) $(DRIVERS)
-
-libadbc_driver_trino.$(SUFFIX): $(wildcard *.go pkg/*.go pkg/*.c pkg/%.h) go.mod go.sum
-	go build -C ./pkg -o ../$@ -buildmode=c-shared -tags driverlib -ldflags "-s -w" .
-	-$(RM) ./$(basename $@).h
-	chmod 755 $@
+generated/
+validation-report.xml

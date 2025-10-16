@@ -21,10 +21,15 @@ version = "0.1.0"
 
 [tasks]
 make = "adbc-make run build DRIVER=trino VERBOSE=true"
+test = "go test -tags assert -v ./..."
 release = "adbc-release"
+validate = "pytest -vvs --junit-xml=validation-report.xml -rfEsxX validation/tests/"
+gendocs = "python -m validation.tests.generate_documentation"
 
 [dependencies]
 python = ">=3.13.5,<3.14"
+pytest-lazy-fixtures = ">=1.3.2,<2"
 
 [pypi-dependencies]
-adbc-drivers-dev = { git = "ssh://git@github.com/adbc-drivers/dev", rev = "fe64eee5e66ddf6465460fd9ea0209550067757e" }
+adbc-drivers-dev = { git = "ssh://git@github.com/adbc-drivers/dev", rev = "97265f252a81e2f801becdddb1bff6c7f7c2ca47" }
+adbc-drivers-validation = { git = "ssh://git@github.com/adbc-drivers/validation", rev = "ab09dd4c106d58d8c1c4e4110a360e022c9095de" }
