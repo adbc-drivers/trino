@@ -29,6 +29,15 @@ Driver Manifests, such as [dbc](https://columnar.tech/dbc).
 
 See [Building](#building) if you would rather build the drivers yourself.
 
+## Usage
+
+See examples for:
+
+- [Go](https://github.com/columnar-tech/adbc-quickstarts/tree/main/go/trino)
+- [Python](https://github.com/columnar-tech/adbc-quickstarts/tree/main/python/trino)
+- [R](https://github.com/columnar-tech/adbc-quickstarts/tree/main/r/trino)
+- [Rust](https://github.com/columnar-tech/adbc-quickstarts/tree/main/rust/trino)
+
 ## Building
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
