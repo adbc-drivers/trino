@@ -17,20 +17,22 @@
 # How to Contribute
 
 All contributors are expected to follow the [Code of
-Conduct](CODE_OF_CONDUCT.md).
+Conduct](https://github.com/adbc-drivers/trino?tab=coc-ov-file#readme).
 
-## Reporting Issues
+## Reporting Issues and Making Feature Requests
 
 Please file issues and feature requests on the GitHub issue tracker:
 https://github.com/adbc-drivers/trino/issues
 
 Potential security vulnerabilities should be reported to
 [security@adbc-drivers.org](mailto:security@adbc-drivers.org) instead.  See
-[SECURITY.md](./SECURITY.md).
+the [Security
+Policy](https://github.com/adbc-drivers/trino?tab=security-ov-file#readme).
 
 ## Build and Test
 
 For basic development, the driver can be built and tested like any Go project.
+From the `go/` subdirectory:
 
 ```shell
 $ go build ./...
@@ -47,8 +49,7 @@ $ pixi run make
 
 To run the validation suite, you will first need to build the shared library.
 You will also need to set up a Trino instance (see [the validation
-README](./go/validation/README.md)).  Finally, from the `go/`
-subdirectory:
+README](./go/validation/README.md)).  Finally, from the `go/` subdirectory:
 
 ```shell
 $ pixi run validate

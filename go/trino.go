@@ -490,11 +490,13 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 
 	case *array.Binary:
 		// Trino Go client doesn't support []byte - convert to base64 string
+		// XXX: arrow-go's BinaryLike interface is difficult to use (it doesn't give you values...) so we have to duplicate code here
 		val := a.Value(index)
 		return base64.StdEncoding.EncodeToString(val), nil
-
 	case *array.LargeBinary:
-		// Trino Go client doesn't support []byte - convert to base64 string
+		val := a.Value(index)
+		return base64.StdEncoding.EncodeToString(val), nil
+	case *array.BinaryView:
 		val := a.Value(index)
 		return base64.StdEncoding.EncodeToString(val), nil
 
@@ -509,9 +511,8 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 			}
 			return uuidVal.String(), nil
 		}
-
-		// For non-UUID FixedSizeBinary, fall through to default
-		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
+		val := a.Value(index)
+		return base64.StdEncoding.EncodeToString(val), nil
 
 	default:
 		// For all other types, use default conversion

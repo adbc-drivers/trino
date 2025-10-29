@@ -31,5 +31,5 @@ python = ">=3.13.5,<3.14"
 pytest-lazy-fixtures = ">=1.3.2,<2"
 
 [pypi-dependencies]
-adbc-drivers-dev = { git = "ssh://git@github.com/adbc-drivers/dev", rev = "5a8373c9258eb9a408faa9536c57e3df25f8eab4" }
-adbc-drivers-validation = { git = "ssh://git@github.com/adbc-drivers/validation", rev = "ab09dd4c106d58d8c1c4e4110a360e022c9095de" }
+adbc-drivers-dev = { git = "https://github.com/adbc-drivers/dev" }
+adbc-drivers-validation = { git = "https://github.com/adbc-drivers/validation" }

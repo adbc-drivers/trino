@@ -336,6 +336,12 @@ func (c *trinoConnectionImpl) arrowToTrinoType(arrowType arrow.DataType) string 
 		trinoType = "VARCHAR"
 	case *arrow.BinaryType:
 		trinoType = "VARBINARY"
+	case *arrow.BinaryViewType:
+		trinoType = "VARBINARY"
+	case *arrow.FixedSizeBinaryType:
+		trinoType = "VARBINARY"
+	case *arrow.LargeBinaryType:
+		trinoType = "VARBINARY"
 	case *arrow.Date32Type:
 		trinoType = "DATE"
 	case *arrow.TimestampType:

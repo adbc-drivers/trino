@@ -28,6 +28,7 @@ updates:
   - package-ecosystem: "gomod"
     commit-message:
       prefix: "chore: "
+    directory: "/go"
     groups:
       "golang.org/x":
         applies-to: version-updates

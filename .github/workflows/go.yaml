@@ -35,41 +35,33 @@ permissions:
 
 jobs:
   test:
-    uses: adbc-drivers/dev/.github/workflows/test.yaml@5a8373c9258eb9a408faa9536c57e3df25f8eab4
-    secrets:
-      clone_pat: ${{ secrets.CLONE_PAT }}
+    uses: adbc-drivers/dev/.github/workflows/test.yaml@19b7466f3177cf978db8c7a444f8710bd850e66c
     with:
       driver: trino
       release: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
       subdir: go
 
   validate:
-    uses: adbc-drivers/dev/.github/workflows/validate.yaml@5a8373c9258eb9a408faa9536c57e3df25f8eab4
-    secrets:
-      clone_pat: ${{ secrets.CLONE_PAT }}
+    uses: adbc-drivers/dev/.github/workflows/validate.yaml@19b7466f3177cf978db8c7a444f8710bd850e66c
     with:
       driver: trino
       subdir: go
 
   release:
-    uses: adbc-drivers/dev/.github/workflows/release.yaml@5a8373c9258eb9a408faa9536c57e3df25f8eab4
+    uses: adbc-drivers/dev/.github/workflows/release.yaml@19b7466f3177cf978db8c7a444f8710bd850e66c
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs:
       - test
       - validate
     with:
       subdir: go
-    secrets:
-      clone_pat: ${{ secrets.CLONE_PAT }}
 
   release-dry-run:
-    uses: adbc-drivers/dev/.github/workflows/release.yaml@5a8373c9258eb9a408faa9536c57e3df25f8eab4
+    uses: adbc-drivers/dev/.github/workflows/release.yaml@19b7466f3177cf978db8c7a444f8710bd850e66c
     if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
     needs:
       - test
       - validate
-    secrets:
-      clone_pat: ${{ secrets.CLONE_PAT }}
     with:
       dry_run: true
       subdir: go

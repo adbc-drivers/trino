@@ -45,7 +45,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/26/9f/1aab65a6c0db35f43c4d1b4f580e8df53914310afc10ae0397d29d697af4/cffi-1.17.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/7e/95/42aa2156235cbc8fa61208aded06ef46111c4d3f0de233107b3f38631803/charset_normalizer-3.4.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/7e/e8/64c37fadfc2816a7701fa8a6ed8d87327c7d54eacfbfb6edab14a2f2be75/cloudpickle-3.1.1-py3-none-any.whl
-      - pypi: git+ssh://git@github.com/adbc-drivers/dev?rev=5a8373c9258eb9a408faa9536c57e3df25f8eab4#5a8373c9258eb9a408faa9536c57e3df25f8eab4
+      - pypi: git+https://github.com/adbc-drivers/dev#19b7466f3177cf978db8c7a444f8710bd850e66c
       - pypi: https://files.pythonhosted.org/packages/44/83/a2960d2c975836daa629a73995134fd86520c101412578c57da3d2aa71ee/doit-0.36.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/17/fc/9b958751f0116d7b0406406b07fa6f5a10c22d699be27826d0b896f9bf51/duckdb-1.4.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl
@@ -53,7 +53,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a9/21/9b05698b46f218fc0e118e1f8168395c65c8a2c750ae2bab54fc4bd4e0e8/markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/fe/39/979e8e21520d4e47a0bbe349e2713c0aac6f3d853d0e5b34d76206c439aa/platformdirs-4.3.8-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/89/4b/7782438b551dbb0468892a276b8c789b8bbdb25ea5c5eb27faadd753e037/pyarrow-21.0.0-cp313-cp313-manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/1b/8b/5362443737a5307a7b67c1017c42cd104213189b4970bf607e05faf9c525/pyarrow-22.0.0-cp313-cp313-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/13/a3/a812df4e2dd5696d1f351d58b8fe16a405b234ad2886a0dab9183fb78109/pycparser-2.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/5d/da/29a3c808bfb42ba86e5aca226fad7871b65fc216e18e14190553a879157b/pygit2-1.18.2-cp313-cp313-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl
@@ -61,8 +61,8 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/1f/8f/ecfbe2123ade605c49ef769788f79c38ddb1c8fa81e01f4dbf5cf1a44b16/ruamel.yaml.clib-0.2.12-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/bd/75/8539d011f6be8e29f339c42e633aae3cb73bffa95dd0f9adec09b9c58e85/tomlkit-0.13.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl
-      - pypi: git+ssh://git@github.com/adbc-drivers/validation?rev=ab09dd4c106d58d8c1c4e4110a360e022c9095de#ab09dd4c106d58d8c1c4e4110a360e022c9095de
-      - pypi: https://files.pythonhosted.org/packages/19/4a/98030aacda1af6b10522a6d72e6a72033392c255b474f82e924aa56e3a08/whenever-0.8.9-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+      - pypi: git+https://github.com/adbc-drivers/validation#86eee74ed10c94efb6c386af8723b1841bf760ba
+      - pypi: https://files.pythonhosted.org/packages/5c/55/238408391f365958286ec2038ff9d2a05959595703d2980cd635a2d846f5/whenever-0.9.3-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       linux-aarch64:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/_openmp_mutex-4.5-2_gnu.tar.bz2
@@ -102,7 +102,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/75/b2/fbaec7c4455c604e29388d55599b99ebcc250a60050610fadde58932b7ee/cffi-1.17.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/71/11/98a04c3c97dd34e49c7d247083af03645ca3730809a5509443f3c37f7c99/charset_normalizer-3.4.3-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/7e/e8/64c37fadfc2816a7701fa8a6ed8d87327c7d54eacfbfb6edab14a2f2be75/cloudpickle-3.1.1-py3-none-any.whl
-      - pypi: git+ssh://git@github.com/adbc-drivers/dev?rev=5a8373c9258eb9a408faa9536c57e3df25f8eab4#5a8373c9258eb9a408faa9536c57e3df25f8eab4
+      - pypi: git+https://github.com/adbc-drivers/dev#19b7466f3177cf978db8c7a444f8710bd850e66c
       - pypi: https://files.pythonhosted.org/packages/44/83/a2960d2c975836daa629a73995134fd86520c101412578c57da3d2aa71ee/doit-0.36.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/15/7b/c4f272a40c36d82df20937d93a1780eb39ab0107fe42b62cba889151eab9/duckdb-1.4.1-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl
@@ -110,7 +110,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/00/07/575a68c754943058c78f30db02ee03a64b3c638586fba6a6dd56830b30a3/markupsafe-3.0.3-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/fe/39/979e8e21520d4e47a0bbe349e2713c0aac6f3d853d0e5b34d76206c439aa/platformdirs-4.3.8-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/84/52/79095d73a742aa0aba370c7942b1b655f598069489ab387fe47261a849e1/pyarrow-21.0.0-cp313-cp313-manylinux_2_28_aarch64.whl
+      - pypi: https://files.pythonhosted.org/packages/ff/c0/782344c2ce58afbea010150df07e3a2f5fdad299cd631697ae7bd3bac6e3/pyarrow-22.0.0-cp313-cp313-manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/13/a3/a812df4e2dd5696d1f351d58b8fe16a405b234ad2886a0dab9183fb78109/pycparser-2.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fd/b6/7990c465a5a6967df87323a8a90e19e9b393d238497c62d0aabcb98b9d62/pygit2-1.18.2-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl
@@ -118,8 +118,8 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/7f/5e/212f473a93ae78c669ffa0cb051e3fee1139cb2d385d2ae1653d64281507/ruamel.yaml.clib-0.2.12-cp313-cp313-manylinux2014_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/bd/75/8539d011f6be8e29f339c42e633aae3cb73bffa95dd0f9adec09b9c58e85/tomlkit-0.13.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl
-      - pypi: git+ssh://git@github.com/adbc-drivers/validation?rev=ab09dd4c106d58d8c1c4e4110a360e022c9095de#ab09dd4c106d58d8c1c4e4110a360e022c9095de
-      - pypi: https://files.pythonhosted.org/packages/84/f1/dbc972e00fb10a64979a47e9a851bec546daf2d04fa740631c77b24b7613/whenever-0.8.9-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+      - pypi: git+https://github.com/adbc-drivers/validation#86eee74ed10c94efb6c386af8723b1841bf760ba
+      - pypi: https://files.pythonhosted.org/packages/c0/ed/80080d1b9bf5bfa2458691d2c97ac50132ea6ab1ac87b36b1e0d5435a8e9/whenever-0.9.3-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       osx-arm64:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/bzip2-1.0.8-h99b78c6_7.conda
@@ -154,7 +154,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/8b/f1/672d303ddf17c24fc83afd712316fda78dc6fce1cd53011b839483e1ecc8/cffi-1.17.1-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/65/ca/2135ac97709b400c7654b4b764daf5c5567c2da45a30cdd20f9eefe2d658/charset_normalizer-3.4.3-cp313-cp313-macosx_10_13_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/7e/e8/64c37fadfc2816a7701fa8a6ed8d87327c7d54eacfbfb6edab14a2f2be75/cloudpickle-3.1.1-py3-none-any.whl
-      - pypi: git+ssh://git@github.com/adbc-drivers/dev?rev=5a8373c9258eb9a408faa9536c57e3df25f8eab4#5a8373c9258eb9a408faa9536c57e3df25f8eab4
+      - pypi: git+https://github.com/adbc-drivers/dev#19b7466f3177cf978db8c7a444f8710bd850e66c
       - pypi: https://files.pythonhosted.org/packages/44/83/a2960d2c975836daa629a73995134fd86520c101412578c57da3d2aa71ee/doit-0.36.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/38/46/267f4a570a0ee3ae6871ddc03435f9942884284e22a7ba9b7cb252ee69b6/duckdb-1.4.1-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl
@@ -162,7 +162,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/9c/d9/5f7756922cdd676869eca1c4e3c0cd0df60ed30199ffd775e319089cb3ed/markupsafe-3.0.3-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/fe/39/979e8e21520d4e47a0bbe349e2713c0aac6f3d853d0e5b34d76206c439aa/platformdirs-4.3.8-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/16/ca/c7eaa8e62db8fb37ce942b1ea0c6d7abfe3786ca193957afa25e71b81b66/pyarrow-21.0.0-cp313-cp313-macosx_12_0_arm64.whl
+      - pypi: https://files.pythonhosted.org/packages/a6/d6/d0fac16a2963002fc22c8fa75180a838737203d558f0ed3b564c4a54eef5/pyarrow-22.0.0-cp313-cp313-macosx_12_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/13/a3/a812df4e2dd5696d1f351d58b8fe16a405b234ad2886a0dab9183fb78109/pycparser-2.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0e/ff/34dc8ce51f2f9ba39a5f2b34b9a5d70563cc93a387accf562c5c36e40d2b/pygit2-1.18.2-cp313-cp313-macosx_10_13_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl
@@ -170,8 +170,8 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/20/84/80203abff8ea4993a87d823a5f632e4d92831ef75d404c9fc78d0176d2b5/ruamel.yaml.clib-0.2.12.tar.gz
       - pypi: https://files.pythonhosted.org/packages/bd/75/8539d011f6be8e29f339c42e633aae3cb73bffa95dd0f9adec09b9c58e85/tomlkit-0.13.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl
-      - pypi: git+ssh://git@github.com/adbc-drivers/validation?rev=ab09dd4c106d58d8c1c4e4110a360e022c9095de#ab09dd4c106d58d8c1c4e4110a360e022c9095de
-      - pypi: https://files.pythonhosted.org/packages/31/37/3449a30fc21e84d4221346db7cb69cddf6611b181bc95e1014cb84722b55/whenever-0.8.9-cp313-cp313-macosx_11_0_arm64.whl
+      - pypi: git+https://github.com/adbc-drivers/validation#86eee74ed10c94efb6c386af8723b1841bf760ba
+      - pypi: https://files.pythonhosted.org/packages/7b/d7/d89a6f1b1ea4a2768c813443d7be007377402fa0db99c62c393965165159/whenever-0.9.3-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       win-64:
       - conda: https://conda.anaconda.org/conda-forge/win-64/bzip2-1.0.8-h2466b09_7.conda
@@ -207,7 +207,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/7c/fc/6a8cb64e5f0324877d503c854da15d76c1e50eb722e320b15345c4d0c6de/cffi-1.17.1-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/9a/8f/ae790790c7b64f925e5c953b924aaa42a243fb778fed9e41f147b2a5715a/charset_normalizer-3.4.3-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/7e/e8/64c37fadfc2816a7701fa8a6ed8d87327c7d54eacfbfb6edab14a2f2be75/cloudpickle-3.1.1-py3-none-any.whl
-      - pypi: git+ssh://git@github.com/adbc-drivers/dev?rev=5a8373c9258eb9a408faa9536c57e3df25f8eab4#5a8373c9258eb9a408faa9536c57e3df25f8eab4
+      - pypi: git+https://github.com/adbc-drivers/dev#19b7466f3177cf978db8c7a444f8710bd850e66c
       - pypi: https://files.pythonhosted.org/packages/44/83/a2960d2c975836daa629a73995134fd86520c101412578c57da3d2aa71ee/doit-0.36.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/30/79/4f544d73fcc0513b71296cb3ebb28a227d22e80dec27204977039b9fa875/duckdb-1.4.1-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl
@@ -215,7 +215,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/05/73/c4abe620b841b6b791f2edc248f556900667a5a1cf023a6646967ae98335/markupsafe-3.0.3-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/fe/39/979e8e21520d4e47a0bbe349e2713c0aac6f3d853d0e5b34d76206c439aa/platformdirs-4.3.8-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/01/63/581f2076465e67b23bc5a37d4a2abff8362d389d29d8105832e82c9c811c/pyarrow-21.0.0-cp313-cp313-win_amd64.whl
+      - pypi: https://files.pythonhosted.org/packages/2d/f8/1d0bd75bf9328a3b826e24a16e5517cd7f9fbf8d34a3184a4566ef5a7f29/pyarrow-22.0.0-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/13/a3/a812df4e2dd5696d1f351d58b8fe16a405b234ad2886a0dab9183fb78109/pycparser-2.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ba/f8/d61973ec64a6a7afabec5d1308794399797b44daaacf7ae1969b0f83ddab/pygit2-1.18.2-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl
@@ -223,9 +223,10 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/b0/85/e8e751d8791564dd333d5d9a4eab0a7a115f7e349595417fd50ecae3395c/ruamel.yaml.clib-0.2.12-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/bd/75/8539d011f6be8e29f339c42e633aae3cb73bffa95dd0f9adec09b9c58e85/tomlkit-0.13.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/5c/23/c7abc0ca0a1526a0774eca151daeb8de62ec457e77262b66b359c3c7679e/tzdata-2025.2-py2.py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/c2/14/e2a54fabd4f08cd7af1c07030603c3356b74da07f7cc056e600436edfa17/tzlocal-5.3.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl
-      - pypi: git+ssh://git@github.com/adbc-drivers/validation?rev=ab09dd4c106d58d8c1c4e4110a360e022c9095de#ab09dd4c106d58d8c1c4e4110a360e022c9095de
-      - pypi: https://files.pythonhosted.org/packages/f5/3b/fa6ecd7590336a488af0827cfb147dd93a0721a3137f1da1e055948fef93/whenever-0.8.9-cp313-cp313-win_amd64.whl
+      - pypi: git+https://github.com/adbc-drivers/validation#86eee74ed10c94efb6c386af8723b1841bf760ba
+      - pypi: https://files.pythonhosted.org/packages/7d/8d/70ed8ad284cf228d5ae89a6d3d99f21ccc78b270e8ddea4a0ca4575c5185/whenever-0.9.3-cp313-cp313-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -318,7 +319,7 @@ packages:
   - pyarrow>=14.0.1 ; extra == 'test'
   - pytest ; extra == 'test'
   requires_python: '>=3.9'
-- pypi: git+ssh://git@github.com/adbc-drivers/dev?rev=5a8373c9258eb9a408faa9536c57e3df25f8eab4#5a8373c9258eb9a408faa9536c57e3df25f8eab4
+- pypi: git+https://github.com/adbc-drivers/dev#19b7466f3177cf978db8c7a444f8710bd850e66c
   name: adbc-drivers-dev
   version: '0.1'
   requires_dist:
@@ -329,7 +330,7 @@ packages:
   - requests
   - ruamel-yaml>=0.18.11,<0.19
   - tomlkit>=0.13.2,<0.14
-- pypi: git+ssh://git@github.com/adbc-drivers/validation?rev=ab09dd4c106d58d8c1c4e4110a360e022c9095de#ab09dd4c106d58d8c1c4e4110a360e022c9095de
+- pypi: git+https://github.com/adbc-drivers/validation#86eee74ed10c94efb6c386af8723b1841bf760ba
   name: adbc-drivers-validation
   version: '0.1'
   requires_dist:
@@ -337,9 +338,9 @@ packages:
   - bidict>=0.23.1,<1.0.0
   - duckdb>=1.4.1,<2
   - jinja2>=3.1.6,<4
-  - pyarrow>=21.0.0,<22
+  - pyarrow>=22.0.0,<23
   - pytest>=8.4.1,<9
-  - whenever>=0.8.8,<0.9
+  - whenever>=0.9.3,<0.10
   requires_python: '>=3.13'
 - pypi: https://files.pythonhosted.org/packages/99/37/e8730c3587a65eb5645d4aba2d27aae48e8003614d6aaf15dda67f702f1f/bidict-0.23.1-py3-none-any.whl
   name: bidict
@@ -1129,50 +1130,26 @@ packages:
   - pkg:pypi/pluggy?source=hash-mapping
   size: 24246
   timestamp: 1747339794916
-- pypi: https://files.pythonhosted.org/packages/01/63/581f2076465e67b23bc5a37d4a2abff8362d389d29d8105832e82c9c811c/pyarrow-21.0.0-cp313-cp313-win_amd64.whl
+- pypi: https://files.pythonhosted.org/packages/1b/8b/5362443737a5307a7b67c1017c42cd104213189b4970bf607e05faf9c525/pyarrow-22.0.0-cp313-cp313-manylinux_2_28_x86_64.whl
   name: pyarrow
-  version: 21.0.0
-  sha256: 186aa00bca62139f75b7de8420f745f2af12941595bbbfa7ed3870ff63e25636
-  requires_dist:
-  - pytest ; extra == 'test'
-  - hypothesis ; extra == 'test'
-  - cffi ; extra == 'test'
-  - pytz ; extra == 'test'
-  - pandas ; extra == 'test'
-  requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/16/ca/c7eaa8e62db8fb37ce942b1ea0c6d7abfe3786ca193957afa25e71b81b66/pyarrow-21.0.0-cp313-cp313-macosx_12_0_arm64.whl
+  version: 22.0.0
+  sha256: e0a15757fccb38c410947df156f9749ae4a3c89b2393741a50521f39a8cf202a
+  requires_python: '>=3.10'
+- pypi: https://files.pythonhosted.org/packages/2d/f8/1d0bd75bf9328a3b826e24a16e5517cd7f9fbf8d34a3184a4566ef5a7f29/pyarrow-22.0.0-cp313-cp313-win_amd64.whl
   name: pyarrow
-  version: 21.0.0
-  sha256: e99310a4ebd4479bcd1964dff9e14af33746300cb014aa4a3781738ac63baf4a
-  requires_dist:
-  - pytest ; extra == 'test'
-  - hypothesis ; extra == 'test'
-  - cffi ; extra == 'test'
-  - pytz ; extra == 'test'
-  - pandas ; extra == 'test'
-  requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/84/52/79095d73a742aa0aba370c7942b1b655f598069489ab387fe47261a849e1/pyarrow-21.0.0-cp313-cp313-manylinux_2_28_aarch64.whl
+  version: 22.0.0
+  sha256: a4893d31e5ef780b6edcaf63122df0f8d321088bb0dee4c8c06eccb1ca28d145
+  requires_python: '>=3.10'
+- pypi: https://files.pythonhosted.org/packages/a6/d6/d0fac16a2963002fc22c8fa75180a838737203d558f0ed3b564c4a54eef5/pyarrow-22.0.0-cp313-cp313-macosx_12_0_arm64.whl
   name: pyarrow
-  version: 21.0.0
-  sha256: f522e5709379d72fb3da7785aa489ff0bb87448a9dc5a75f45763a795a089ebd
-  requires_dist:
-  - pytest ; extra == 'test'
-  - hypothesis ; extra == 'test'
-  - cffi ; extra == 'test'
-  - pytz ; extra == 'test'
-  - pandas ; extra == 'test'
-  requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/89/4b/7782438b551dbb0468892a276b8c789b8bbdb25ea5c5eb27faadd753e037/pyarrow-21.0.0-cp313-cp313-manylinux_2_28_x86_64.whl
+  version: 22.0.0
+  sha256: e6e95176209257803a8b3d0394f21604e796dadb643d2f7ca21b66c9c0b30c9a
+  requires_python: '>=3.10'
+- pypi: https://files.pythonhosted.org/packages/ff/c0/782344c2ce58afbea010150df07e3a2f5fdad299cd631697ae7bd3bac6e3/pyarrow-22.0.0-cp313-cp313-manylinux_2_28_aarch64.whl
   name: pyarrow
-  version: 21.0.0
-  sha256: 69cbbdf0631396e9925e048cfa5bce4e8c3d3b41562bbd70c685a8eb53a91e61
-  requires_dist:
-  - pytest ; extra == 'test'
-  - hypothesis ; extra == 'test'
-  - cffi ; extra == 'test'
-  - pytz ; extra == 'test'
-  - pandas ; extra == 'test'
-  requires_python: '>=3.9'
+  version: 22.0.0
+  sha256: ce20fe000754f477c8a9125543f1936ea5b8867c5406757c224d745ed033e691
+  requires_python: '>=3.10'
 - pypi: https://files.pythonhosted.org/packages/13/a3/a812df4e2dd5696d1f351d58b8fe16a405b234ad2886a0dab9183fb78109/pycparser-2.22-py3-none-any.whl
   name: pycparser
   version: '2.22'
@@ -1522,6 +1499,18 @@ packages:
   purls: []
   size: 122968
   timestamp: 1742727099393
+- pypi: https://files.pythonhosted.org/packages/c2/14/e2a54fabd4f08cd7af1c07030603c3356b74da07f7cc056e600436edfa17/tzlocal-5.3.1-py3-none-any.whl
+  name: tzlocal
+  version: 5.3.1
+  sha256: eb1a66c3ef5847adf7a834f1be0800581b683b5608e74f86ecbcef8ab91bb85d
+  requires_dist:
+  - tzdata ; sys_platform == 'win32'
+  - pytest>=4.3 ; extra == 'devenv'
+  - pytest-mock>=3.3 ; extra == 'devenv'
+  - pytest-cov ; extra == 'devenv'
+  - check-manifest ; extra == 'devenv'
+  - zest-releaser ; extra == 'devenv'
+  requires_python: '>=3.9'
 - conda: https://conda.anaconda.org/conda-forge/win-64/ucrt-10.0.22621.0-h57928b3_1.conda
   sha256: db8dead3dd30fb1a032737554ce91e2819b43496a0db09927edf01c32b577450
   md5: 6797b005cd0f439c4c5c9ac565783700
@@ -1579,33 +1568,37 @@ packages:
   purls: []
   size: 113963
   timestamp: 1753739198723
-- pypi: https://files.pythonhosted.org/packages/19/4a/98030aacda1af6b10522a6d72e6a72033392c255b474f82e924aa56e3a08/whenever-0.8.9-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+- pypi: https://files.pythonhosted.org/packages/5c/55/238408391f365958286ec2038ff9d2a05959595703d2980cd635a2d846f5/whenever-0.9.3-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
   name: whenever
-  version: 0.8.9
-  sha256: 5af3f15e365a123240a337acc6872fefbf0015d79ae40faf02cdf1af0c317bae
+  version: 0.9.3
+  sha256: 1d91016f4eef16b8cb407bb82d6db1567c8910f32e1658601893f43983f76d63
   requires_dist:
   - tzdata>=2020.1 ; sys_platform == 'win32'
+  - tzlocal>=4.0 ; sys_platform != 'darwin' and sys_platform != 'linux'
   requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/31/37/3449a30fc21e84d4221346db7cb69cddf6611b181bc95e1014cb84722b55/whenever-0.8.9-cp313-cp313-macosx_11_0_arm64.whl
+- pypi: https://files.pythonhosted.org/packages/7b/d7/d89a6f1b1ea4a2768c813443d7be007377402fa0db99c62c393965165159/whenever-0.9.3-cp313-cp313-macosx_11_0_arm64.whl
   name: whenever
-  version: 0.8.9
-  sha256: 924b778a4e2266c09502fba426ff947271a1a6aafb42be1739cae11e249c895d
+  version: 0.9.3
+  sha256: 01dcd44c16c910ed99a2960df9e591fb3bb7c7ced7cfe93640b74d79957e117b
   requires_dist:
   - tzdata>=2020.1 ; sys_platform == 'win32'
+  - tzlocal>=4.0 ; sys_platform != 'darwin' and sys_platform != 'linux'
   requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/84/f1/dbc972e00fb10a64979a47e9a851bec546daf2d04fa740631c77b24b7613/whenever-0.8.9-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+- pypi: https://files.pythonhosted.org/packages/7d/8d/70ed8ad284cf228d5ae89a6d3d99f21ccc78b270e8ddea4a0ca4575c5185/whenever-0.9.3-cp313-cp313-win_amd64.whl
   name: whenever
-  version: 0.8.9
-  sha256: 210349884bb8b187b8bc9cfb1184136c1f15b59e2076bbefc05919b15a64fe7c
+  version: 0.9.3
+  sha256: c075bad2f67e9c5b561b9643b44b396cb7bb6c5764f1f7d846755ebe9e215574
   requires_dist:
   - tzdata>=2020.1 ; sys_platform == 'win32'
+  - tzlocal>=4.0 ; sys_platform != 'darwin' and sys_platform != 'linux'
   requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/f5/3b/fa6ecd7590336a488af0827cfb147dd93a0721a3137f1da1e055948fef93/whenever-0.8.9-cp313-cp313-win_amd64.whl
+- pypi: https://files.pythonhosted.org/packages/c0/ed/80080d1b9bf5bfa2458691d2c97ac50132ea6ab1ac87b36b1e0d5435a8e9/whenever-0.9.3-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
   name: whenever
-  version: 0.8.9
-  sha256: 1852dae89e1fa79d629dae3e8f9f5ff7ec06ccb342ce8b4285828fdcda373e7c
+  version: 0.9.3
+  sha256: 3fdecc368809f1b6103247785edc4350c1aabb99da79d6b788d55d3b6969f494
   requires_dist:
   - tzdata>=2020.1 ; sys_platform == 'win32'
+  - tzlocal>=4.0 ; sys_platform != 'darwin' and sys_platform != 'linux'
   requires_python: '>=3.9'
 - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
   name: zipp

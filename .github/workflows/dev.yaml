@@ -25,6 +25,4 @@ permissions:
 
 jobs:
   lint:
-    uses: adbc-drivers/dev/.github/workflows/dev.yaml@5a8373c9258eb9a408faa9536c57e3df25f8eab4
-    secrets:
-      clone_pat: ${{ secrets.CLONE_PAT }}
+    uses: adbc-drivers/dev/.github/workflows/dev.yaml@19b7466f3177cf978db8c7a444f8710bd850e66c
