@@ -27,7 +27,7 @@ updates:
 
   - package-ecosystem: "gomod"
     commit-message:
-      prefix: "chore: "
+      prefix: "chore(go): "
     directory: "/go"
     groups:
       "golang.org/x":
