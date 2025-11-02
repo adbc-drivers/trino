@@ -241,16 +241,12 @@ func (ins *trinoBinaryInserter) AppendValue(sqlValue any) error {
 		return nil
 	}
 
-	t, ok := unwrapped.(string)
+	t, ok := unwrapped.([]byte)
 	if !ok {
-		return fmt.Errorf("expected string for trino binary inserter, got %T", sqlValue)
+		return fmt.Errorf("expected []byte for trino binary inserter, got %T", sqlValue)
 	}
 
-	decoded, err := base64.StdEncoding.DecodeString(t)
-	if err != nil {
-		return fmt.Errorf("failed to decode base64 binary data: %w", err)
-	}
-	ins.builder.Append(decoded)
+	ins.builder.Append(t)
 	return nil
 }
 
