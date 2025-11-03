@@ -247,7 +247,7 @@ func (c *trinoConnectionImpl) getParameterPlaceholder(arrowType arrow.DataType) 
 		return "CAST(? AS REAL)"
 	case *arrow.Float64Type:
 		return "CAST(? AS DOUBLE)"
-	case *arrow.BinaryType, *arrow.LargeBinaryType:
+	case *arrow.BinaryType, *arrow.LargeBinaryType, *arrow.BinaryViewType, *arrow.FixedSizeBinaryType:
 		return "FROM_BASE64(?)"
 	default:
 		return "?"
