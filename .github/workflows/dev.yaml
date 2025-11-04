@@ -25,4 +25,4 @@ permissions:
 
 jobs:
   lint:
-    uses: adbc-drivers/dev/.github/workflows/dev.yaml@19b7466f3177cf978db8c7a444f8710bd850e66c
+    uses: adbc-drivers/dev/.github/workflows/dev.yaml@742df4896dbb58618cedc0a635f33bdcff3ffb5a
