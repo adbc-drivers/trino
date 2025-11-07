@@ -27,41 +27,39 @@ open-source distributed SQL query engine.
 
 The driver can be installed with `dbc`.
 
-To use the driver, provide the Trino connection URI as the `url` option.
+To use the driver, provide a Trino connection string as the `url` option. The driver supports URI format and DSN-style connection strings, but URIs are recommended.
 
-## Connection URI Format
+## Connection String Format
 
-The Trino ADBC driver supports `trino://` URIs:
+The Trino URI syntax:
 
 ```
-trino://username[:password]@host[:port][?param1=value1&param2=value2]
+trino://[user[:password]@]host[:port][/catalog[/schema]][?attribute1=value1&attribute2=value2...]
 ```
 
 Components:
 - Scheme: trino:// (required)
-- Username: Required (for authentication)
-- Password: Optional (for authentication)
+- User: Optional (for authentication)
+- Password: Optional (for authentication, requires user)
 - Host: Required (no default)
-- Port: Optional (defaults to 8080)
-- Query params: Trino connection parameters
+- Port: Optional (defaults to 80 for HTTP, 443 for HTTPS)
+- Catalog: Optional (Trino catalog name)
+- Schema: Optional (schema within catalog)
+- Query params: Trino connection attributes
 
-See [Trino Concepts](https://trino.io/docs/current/overview/concepts.html#catalog) for more information.
+:::{note}
+Reserved characters in URI elements must be URI-encoded. For example, `@` becomes `%40`. If you include a zone ID in an IPv6 address, the `%` character used as the separator must be replaced with `%25`.
+:::
 
-Common Parameters:
-- `catalog`: Trino catalog name (e.g., `hive`, `postgresql`)
-- `schema`: Schema within catalog (e.g., `default`, `public`)
-- `source`: Connection source identifier for troubleshooting
-- `session_properties`: Comma-separated session properties
-- `custom_client`: Name of registered custom HTTP client
-- `queryTimeout`: Query timeout duration
-- `explicitPrepare`: Use explicit prepared statements (true/false)
-- `clientTags`: Comma-separated client tags
+See [Trino JDBC Documentation](https://trino.io/docs/current/client/jdbc.html#parameter-reference) for complete parameter reference and [Trino Concepts](https://trino.io/docs/current/overview/concepts.html#catalog) for more information.
 
 Examples:
-- trino://user@localhost:8080?catalog=default&schema=test
-- trino://user@localhost:8080?source=hello&catalog=default&schema=foobar
-- trino://user@localhost:8443?session_properties=query_max_run_time=10m,query_priority=2
+- trino://localhost:8080/hive/default
+- trino://user:pass@trino.example.com:8080/postgresql/public
+- trino://trino.example.com/hive/sales?SSL=true
+- trino://user@localhost:8443/memory/default?SSL=true&source=myapp
 
+The driver also supports the Trino DSN format (see [Go Trino Client documentation](https://github.com/trinodb/trino-go-client?tab=readme-ov-file#dsn-data-source-name)), but URIs are recommended.
 
 ## Feature & Type Support
 
