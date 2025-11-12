@@ -78,20 +78,3 @@ def dsn(
     username, password = creds
     return f"https://{username}:{password}@{trino_host}:{trino_port}?catalog={trino_catalog}&schema={trino_schema}"
 
-
-# @pytest.fixture(scope="session")
-# def ssl_enabled() -> bool:
-#     """
-#     Returns True if SSL should be enabled for tests.
-#     Example: TRINO_SSL=true
-#     """
-#     return os.environ.get("TRINO_SSL", "false").lower() == "true"
-
-
-# @pytest.fixture(scope="session")
-# def source_name() -> str:
-#     """
-#     Returns the Trino source name for connection tracking.
-#     Example: TRINO_SOURCE=test-client
-#     """
-#     return os.environ.get("TRINO_SOURCE", "adbc-test")

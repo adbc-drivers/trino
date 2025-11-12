@@ -234,10 +234,10 @@ def test_source_parameter(
     driver_path: str,
     uri: str,  # trino://localhost:8080/memory/default
     creds: tuple[str, str],
-    source_name: str,
 ) -> None:
     """Tests that 'source' parameter is correctly passed to Trino."""
     username, password = creds
+    source_name = "test-client"  # Hardcoded for testing
 
     parsed = urllib.parse.urlparse(uri)
     netloc = f"{username}:{password}@{parsed.netloc}"
