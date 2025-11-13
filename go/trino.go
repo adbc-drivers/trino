@@ -17,7 +17,6 @@ package trino
 import (
 	"context"
 	"database/sql/driver"
-	"encoding/base64"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -241,16 +240,12 @@ func (ins *trinoBinaryInserter) AppendValue(sqlValue any) error {
 		return nil
 	}
 
-	t, ok := unwrapped.(string)
+	t, ok := unwrapped.([]byte)
 	if !ok {
-		return fmt.Errorf("expected string for trino binary inserter, got %T", sqlValue)
+		return fmt.Errorf("expected []byte for trino binary inserter, got %T", sqlValue)
 	}
 
-	decoded, err := base64.StdEncoding.DecodeString(t)
-	if err != nil {
-		return fmt.Errorf("failed to decode base64 binary data: %w", err)
-	}
-	ins.builder.Append(decoded)
+	ins.builder.Append(t)
 	return nil
 }
 
@@ -488,18 +483,6 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		val := a.Value(index)
 		return fmt.Sprintf("%g", val), nil
 
-	case *array.Binary:
-		// Trino Go client doesn't support []byte - convert to base64 string
-		// XXX: arrow-go's BinaryLike interface is difficult to use (it doesn't give you values...) so we have to duplicate code here
-		val := a.Value(index)
-		return base64.StdEncoding.EncodeToString(val), nil
-	case *array.LargeBinary:
-		val := a.Value(index)
-		return base64.StdEncoding.EncodeToString(val), nil
-	case *array.BinaryView:
-		val := a.Value(index)
-		return base64.StdEncoding.EncodeToString(val), nil
-
 	case *array.FixedSizeBinary:
 		// Check metadata for UUID extension type indication
 		if extName, exists := field.Metadata.GetValue("ARROW:extension:name"); exists && extName == "arrow.uuid" {
@@ -511,8 +494,8 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 			}
 			return uuidVal.String(), nil
 		}
-		val := a.Value(index)
-		return base64.StdEncoding.EncodeToString(val), nil
+		// For non-UUID fixed-size binary, let default converter handle it for proper varbinary conversion
+		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
 
 	default:
 		// For all other types, use default conversion
