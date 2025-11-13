@@ -69,12 +69,15 @@ def uri(trino_host: str, trino_port: str, trino_catalog: str, trino_schema: str)
 
 @pytest.fixture(scope="session")
 def dsn(
-    creds: tuple[str, str], trino_host: str, trino_port: str, trino_catalog: str, trino_schema: str
+    creds: tuple[str, str],
+    trino_host: str,
+    trino_port: str,
+    trino_catalog: str,
+    trino_schema: str,
 ) -> str:
     """
     Constructs a Trino DSN in Go Trino Driver's native format.
-    Example: https://test:password@localhost:8080?catalog=memory&schema=default
+    Example: http://test:password@localhost:8080?catalog=memory&schema=default
     """
     username, password = creds
-    return f"https://{username}:{password}@{trino_host}:{trino_port}?catalog={trino_catalog}&schema={trino_schema}"
-
+    return f"http://{username}:{password}@{trino_host}:{trino_port}?catalog={trino_catalog}&schema={trino_schema}"

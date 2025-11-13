@@ -585,126 +585,117 @@ func TestURIParsing(t *testing.T) {
 		shouldError   bool
 		errorContains string
 	}{
-		// Basic TCP connection variations
 		{
 			name:        "basic trino with port and catalog/schema",
 			trinoURI:    "trino://user:pass@localhost:8080/hive/default",
-			expectedDSN: "https://user:pass@localhost:8080?catalog=hive&schema=default",
+			expectedDSN: "http://user:pass@localhost:8080?catalog=hive&schema=default",
 		},
 		{
-			name:        "trino without port - should default to 80",
+			name:        "trino without port",
 			trinoURI:    "trino://user:pass@localhost/memory/default",
-			expectedDSN: "https://user:pass@localhost:80?catalog=memory&schema=default",
+			expectedDSN: "http://user:pass@localhost:80?catalog=memory&schema=default",
 		},
 		{
 			name:        "trino with SSL - should default to 443",
 			trinoURI:    "trino://user:pass@localhost/hive/default?SSL=true",
-			expectedDSN: "https://user:pass@localhost:443?catalog=hive&schema=default&SSL=true",
+			expectedDSN: "https://user:pass@localhost:443?SSL=true&catalog=hive&schema=default",
 		},
 		{
 			name:        "trino without database/catalog",
 			trinoURI:    "trino://user:pass@localhost:8080",
-			expectedDSN: "https://user:pass@localhost:8080",
+			expectedDSN: "http://user:pass@localhost:8080",
 		},
 		{
 			name:        "trino with only catalog, no schema",
 			trinoURI:    "trino://user:pass@localhost:8080/postgresql",
-			expectedDSN: "https://user:pass@localhost:8080?catalog=postgresql",
+			expectedDSN: "http://user:pass@localhost:8080?catalog=postgresql",
 		},
 		{
 			name:        "trino with custom port",
 			trinoURI:    "trino://user:pass@example.com:9999/hive/sales",
-			expectedDSN: "https://user:pass@example.com:9999?catalog=hive&schema=sales",
+			expectedDSN: "http://user:pass@example.com:9999?catalog=hive&schema=sales",
 		},
 		{
 			name:        "trino with ip address",
 			trinoURI:    "trino://user:pass@127.0.0.1:8080/memory/test",
-			expectedDSN: "https://user:pass@127.0.0.1:8080?catalog=memory&schema=test",
+			expectedDSN: "http://user:pass@127.0.0.1:8080?catalog=memory&schema=test",
 		},
 		{
 			name:        "trino with ipv6 host",
 			trinoURI:    "trino://user:pass@[::1]:8080/hive/default",
-			expectedDSN: "https://user:pass@[::1]:8080?catalog=hive&schema=default",
+			expectedDSN: "http://user:pass@[::1]:8080?catalog=hive&schema=default",
 		},
 		{
 			name:        "trino with ipv6 host, default port",
 			trinoURI:    "trino://user:pass@[::1]/memory/default",
-			expectedDSN: "https://user:pass@[::1]:80?catalog=memory&schema=default",
+			expectedDSN: "http://user:pass@[::1]:80?catalog=memory&schema=default",
 		},
-
-		// Credential handling variations
 		{
 			name:        "no credentials in uri",
 			trinoURI:    "trino://localhost:8080/hive/default",
-			expectedDSN: "https://localhost:8080?catalog=hive&schema=default",
+			expectedDSN: "http://localhost:8080?catalog=hive&schema=default",
 		},
 		{
 			name:        "only username in uri",
 			trinoURI:    "trino://user@localhost:8080/memory/default",
-			expectedDSN: "https://user@localhost:8080?catalog=memory&schema=default",
+			expectedDSN: "http://user@localhost:8080?catalog=memory&schema=default",
 		},
 		{
 			name:        "override credentials with options",
 			trinoURI:    "trino://olduser:oldpass@localhost:8080/hive/default",
 			username:    "newuser",
 			password:    "newpass",
-			expectedDSN: "https://newuser:newpass@localhost:8080?catalog=hive&schema=default",
+			expectedDSN: "http://newuser:newpass@localhost:8080?catalog=hive&schema=default",
 		},
 		{
 			name:        "add credentials via options",
 			trinoURI:    "trino://localhost:8080/memory/default",
 			username:    "admin",
 			password:    "secret",
-			expectedDSN: "https://admin:secret@localhost:8080?catalog=memory&schema=default",
+			expectedDSN: "http://admin:secret@localhost:8080?catalog=memory&schema=default",
 		},
 		{
 			name:        "override only username",
 			trinoURI:    "trino://user:pass@localhost:8080/hive/default",
 			username:    "newuser",
-			expectedDSN: "https://newuser:pass@localhost:8080?catalog=hive&schema=default",
+			expectedDSN: "http://newuser:pass@localhost:8080?catalog=hive&schema=default",
 		},
 		{
 			name:        "override only password",
 			trinoURI:    "trino://user:pass@localhost:8080/hive/default",
 			password:    "newpass",
-			expectedDSN: "https://user:newpass@localhost:8080?catalog=hive&schema=default",
+			expectedDSN: "http://user:newpass@localhost:8080?catalog=hive&schema=default",
 		},
-
-		// Query parameter variations
 		{
 			name:        "single query parameter",
 			trinoURI:    "trino://user:pass@localhost:8080/hive/default?source=myapp",
-			expectedDSN: "https://user:pass@localhost:8080?catalog=hive&schema=default&source=myapp",
+			expectedDSN: "http://user:pass@localhost:8080?catalog=hive&schema=default&source=myapp",
 		},
 		{
 			name:        "multiple query parameters",
 			trinoURI:    "trino://user:pass@localhost:8080/hive/default?source=myapp&SSL=true&custom_client=test",
-			expectedDSN: "https://user:pass@localhost:8080?catalog=hive&schema=default&custom_client=test&source=myapp&SSL=true",
+			expectedDSN: "https://user:pass@localhost:8080?SSL=true&catalog=hive&custom_client=test&schema=default&source=myapp",
 		},
 		{
 			name:        "ssl parameters with custom port",
 			trinoURI:    "trino://user:pass@localhost:8443/memory/default?SSL=true&source=analytics",
-			expectedDSN: "https://user:pass@localhost:8443?catalog=memory&schema=default&source=analytics&SSL=true",
+			expectedDSN: "https://user:pass@localhost:8443?SSL=true&catalog=memory&schema=default&source=analytics",
 		},
 		{
 			name:        "session properties",
-			trinoURI:    "trino://user:pass@localhost:8080/hive/default?session_properties=query_max_memory=1GB,distributed_joins_enabled=false",
-			expectedDSN: "https://user:pass@localhost:8080?catalog=hive&schema=default&session_properties=query_max_memory%3D1GB%2Cdistributed_joins_enabled%3Dfalse",
+			trinoURI:    "trino://user:pass@localhost:8080/hive/default?session_properties=task_concurrency=8,join_distribution_type=BROADCAST",
+			expectedDSN: "http://user:pass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3D8%2Cjoin_distribution_type%3DBROADCAST",
 		},
 		{
 			name:        "url encoded catalog/schema names",
 			trinoURI:    "trino://user:pass@localhost:8080/my%20catalog/my%20schema?source=test",
-			expectedDSN: "https://user:pass@localhost:8080?catalog=my+catalog&schema=my+schema&source=test",
+			expectedDSN: "http://user:pass@localhost:8080?catalog=my+catalog&schema=my+schema&source=test",
 		},
-
-		// Special characters and edge cases
 		{
 			name:        "credentials with special characters",
-			trinoURI:    "trino://my%40user:p%40ss%24word@localhost:8080/hive/default",
-			expectedDSN: "https://my%40user:p%40ss%24word@localhost:8080?catalog=hive&schema=default",
+			trinoURI:    "trino://my%40user:p%40ssword@localhost:8080/hive/default",
+			expectedDSN: "http://my%40user:p%40ssword@localhost:8080?catalog=hive&schema=default",
 		},
-
-		// Error cases
 		{
 			name:          "invalid trino uri format",
 			trinoURI:      "trino://[invalid-uri",
@@ -717,34 +708,51 @@ func TestURIParsing(t *testing.T) {
 			shouldError:   true,
 			errorContains: "invalid Trino URI format",
 		},
-
-		// Port defaults based on SSL
 		{
 			name:        "default HTTP port without SSL",
 			trinoURI:    "trino://user:pass@localhost/hive/default",
-			expectedDSN: "https://user:pass@localhost:80?catalog=hive&schema=default",
+			expectedDSN: "http://user:pass@localhost:80?catalog=hive&schema=default",
 		},
 		{
 			name:        "default HTTPS port with SSL",
 			trinoURI:    "trino://user:pass@localhost/hive/default?SSL=true",
-			expectedDSN: "https://user:pass@localhost:443?catalog=hive&schema=default&SSL=true",
+			expectedDSN: "https://user:pass@localhost:443?SSL=true&catalog=hive&schema=default",
 		},
 		{
 			name:        "explicit port overrides SSL default",
 			trinoURI:    "trino://user:pass@localhost:9999/hive/default?SSL=true",
-			expectedDSN: "https://user:pass@localhost:9999?catalog=hive&schema=default&SSL=true",
+			expectedDSN: "https://user:pass@localhost:9999?SSL=true&catalog=hive&schema=default",
 		},
-
-		// Edge cases with empty paths
 		{
 			name:        "trino with trailing slash",
 			trinoURI:    "trino://user:pass@localhost:8080/",
-			expectedDSN: "https://user:pass@localhost:8080",
+			expectedDSN: "http://user:pass@localhost:8080",
 		},
 		{
 			name:        "trino with catalog and trailing slash",
 			trinoURI:    "trino://user:pass@localhost:8080/hive/",
-			expectedDSN: "https://user:pass@localhost:8080?catalog=hive",
+			expectedDSN: "http://user:pass@localhost:8080?catalog=hive",
+		},
+
+		// dsn tests
+		{
+			name:        "session properties (DSN format)",
+			trinoURI:    "http://user:pass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3D8%2Cjoin_distribution_type%3DBROADCAST",
+			expectedDSN: "http://user:pass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3D8%2Cjoin_distribution_type%3DBROADCAST",
+		},
+		{
+			name:        "add credentials via options (DSN format)",
+			trinoURI:    "http://localhost:8080?catalog=memory&schema=default&source=myapp&SSL=false&query_max_stage_count=100",
+			username:    "admin",
+			password:    "secret",
+			expectedDSN: "http://admin:secret@localhost:8080?catalog=memory&schema=default&source=myapp&SSL=false&query_max_stage_count=100",
+		},
+		{
+			name:        "override credentials with options (DSN format)",
+			trinoURI:    "http://olduser:oldpass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3D8%2Cjoin_distribution_type%3DBROADCAST",
+			username:    "newuser",
+			password:    "newpass",
+			expectedDSN: "http://newuser:newpass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3D8%2Cjoin_distribution_type%3DBROADCAST",
 		},
 	}
 

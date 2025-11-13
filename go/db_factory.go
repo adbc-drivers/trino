@@ -23,7 +23,6 @@ import (
 	"github.com/adbc-drivers/driverbase-go/driverbase"
 	"github.com/adbc-drivers/driverbase-go/sqlwrapper"
 	"github.com/apache/arrow-adbc/go/adbc"
-	"github.com/trinodb/trino-go-client/trino"
 )
 
 // TrinoDBFactory provides Trino-specific database connection creation.
@@ -71,245 +70,110 @@ func (f *TrinoDBFactory) BuildTrinoDSN(opts map[string]string) (string, error) {
 		return "", f.errorHelper.InvalidArgument("missing required option %s", adbc.OptionKeyURI)
 	}
 
-	// Check if this is a Trino URI (trino://)
 	if strings.HasPrefix(baseURI, "trino://") {
 		return f.parseTrinoURIToDSN(baseURI, username, password)
 	}
 
-	// If no credentials provided, return original URI
-	if username == "" && password == "" {
-		return baseURI, nil
-	}
-
-	// Handle both URI and native Trino DSN formats
-	return f.buildTrinoDSNFromURI(baseURI, username, password)
+	return f.buildDSNFromHTTP(baseURI, username, password)
 }
 
-
-// parseTrinoURIToDSN converts a Trino URI to Trino DSN format.
+// parseTrinoURIToDSN converts a Trino URI to Trino DSN format using pure URL manipulation.
 // Examples:
 //
-//	trino://localhost:8080/hive/default → https://localhost:8080?catalog=hive&schema=default
-//	trino://user:pass@host:8080/postgresql/public → https://user:pass@host:8080?catalog=postgresql&schema=public
-//	trino://user@host/memory/default?SSL=true → https://user@host:80?catalog=memory&schema=default&SSL=true
+//	trino://localhost:8080/hive/default → http://localhost:8080?catalog=hive&schema=default
+//	trino://user:pass@host:8080/postgresql/public → http://user:pass@host:8080?catalog=postgresql&schema=public
+//	trino://user@host/memory/default?SSL=true → https://user@host:443?catalog=memory&schema=default&SSL=true
 func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string) (string, error) {
 	u, err := url.Parse(trinoURI)
 	if err != nil {
 		return "", f.errorHelper.InvalidArgument("invalid Trino URI format: %v", err)
 	}
 
-	cfg := &trino.Config{}
-
-	// Extract hostname and port, build ServerURI
-	var scheme string
-	var port string
-
-	// Default ports based on SSL parameter or common defaults
 	queryParams := u.Query()
-	if ssl := queryParams.Get("SSL"); ssl == "true" {
+
+	scheme := "http"
+	if strings.EqualFold(queryParams.Get("SSL"), "true") {
 		scheme = "https"
-		port = "443"
-	} else {
-		scheme = "http"
-		port = "80"
 	}
 
+	if path := strings.TrimPrefix(u.Path, "/"); path != "" {
+		parts := strings.SplitN(path, "/", 2)
+		queryParams.Set("catalog", parts[0])
+		if len(parts) == 2 && parts[1] != "" {
+			queryParams.Set("schema", parts[1])
+		}
+	}
+
+	dsn := &url.URL{
+		Scheme:   scheme,
+		User:     f.applyCredentialOverrides(u.User, username, password),
+		Host:     f.ensureHostPort(u, scheme),
+		RawQuery: queryParams.Encode(),
+	}
+
+	return dsn.String(), nil
+}
+
+// ensureHostPort handles host and port assignment
+func (f *TrinoDBFactory) ensureHostPort(u *url.URL, scheme string) string {
 	if u.Port() != "" {
-		port = u.Port()
+		return u.Host
 	}
-
-	// Handle credentials
-	var userInfo *url.Userinfo
-	if u.User != nil {
-		userInfo = u.User
+	defaultPort := "80"
+	if scheme == "https" {
+		defaultPort = "443"
 	}
-
-	// Override with provided credentials
-	if username != "" {
-		if password != "" {
-			userInfo = url.UserPassword(username, password)
-		} else if u.User != nil {
-			// Keep existing password if only username is overridden
-			if existingPassword, hasPassword := u.User.Password(); hasPassword {
-				userInfo = url.UserPassword(username, existingPassword)
-			} else {
-				userInfo = url.User(username)
-			}
-		} else {
-			userInfo = url.User(username)
-		}
-	} else if password != "" && u.User != nil {
-		// Override only password, keep existing username
-		existingUsername := u.User.Username()
-		userInfo = url.UserPassword(existingUsername, password)
-	}
-
-	// Build the ServerURI
-	serverURL := &url.URL{
-		Scheme: scheme,
-		User:   userInfo,
-		Host:   u.Hostname() + ":" + port,
-	}
-
-	cfg.ServerURI = serverURL.String()
-
-	// Parse path to extract catalog and schema
-	if u.Path != "" && u.Path != "/" {
-		// Remove leading slash and split into parts
-		pathParts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
-
-		if len(pathParts) >= 1 && pathParts[0] != "" {
-			cfg.Catalog = pathParts[0]
-		}
-		if len(pathParts) >= 2 && pathParts[1] != "" {
-			cfg.Schema = pathParts[1]
-		}
-	}
-
-	// Handle query parameters
-	if u.RawQuery != "" {
-		for key, values := range queryParams {
-			if len(values) > 0 {
-				switch key {
-				case "source":
-					cfg.Source = values[0]
-				case "custom_client":
-					cfg.CustomClientName = values[0]
-				case "session_properties":
-					cfg.SessionProperties = make(map[string]string)
-					for _, prop := range strings.Split(values[0], ",") {
-						if parts := strings.SplitN(prop, "=", 2); len(parts) == 2 {
-							cfg.SessionProperties[parts[0]] = parts[1]
-						}
-					}
-				}
-				// Note: SSL and other parameters are handled by the Trino client via query string
-			}
-		}
-	}
-
-	// Build the final DSN
-	dsn := cfg.FormatDSN()
-
-	// Append remaining query parameters that aren't handled by Config
-	if u.RawQuery != "" {
-		preservedParams := url.Values{}
-		for key, values := range queryParams {
-			switch key {
-			case "source", "custom_client", "session_properties":
-				// These are handled by Config.FormatDSN()
-				continue
-			default:
-				// Preserve other parameters like SSL, etc.
-				preservedParams[key] = values
-			}
-		}
-
-		if len(preservedParams) > 0 {
-			if strings.Contains(dsn, "?") {
-				dsn += "&" + preservedParams.Encode()
-			} else {
-				dsn += "?" + preservedParams.Encode()
-			}
-		}
-	}
-
-	return dsn, nil
+	return u.Host + ":" + defaultPort
 }
 
+// buildDSNFromHTTP handles existing HTTP/HTTPS DSNs and plain host strings.
+func (f *TrinoDBFactory) buildDSNFromHTTP(baseURI, username, password string) (string, error) {
+	if !strings.HasPrefix(baseURI, "http://") && !strings.HasPrefix(baseURI, "https://") {
 
-// buildTrinoDSNFromURI handles Trino DSN formats using trino.Config.
-func (f *TrinoDBFactory) buildTrinoDSNFromURI(baseURI, username, password string) (string, error) {
-	var cfg *trino.Config
-	var err error
-
-	if strings.HasPrefix(baseURI, "http://") || strings.HasPrefix(baseURI, "https://") {
-		// Parse existing Trino DSN manually since trino.ParseDSN doesn't exist
-		cfg, err = f.parseTrinoURI(baseURI)
-		if err != nil {
-			return "", f.errorHelper.InvalidArgument("invalid Trino DSN format: %v", err)
+		scheme := "http://"
+		if strings.Contains(baseURI, "SSL=true") {
+			scheme = "https://"
 		}
-	} else {
-		// Treat as plain host string - assume HTTPS
-		cfg = &trino.Config{
-			ServerURI: "https://" + baseURI,
-		}
+		baseURI = scheme + baseURI
 	}
 
-	// Override credentials if provided
-	if username != "" || password != "" {
-		// Update the ServerURI with new credentials
-		if err := f.updateConfigCredentials(cfg, username, password); err != nil {
-			return "", err
-		}
-	}
-
-	return cfg.FormatDSN()
-}
-
-// parseTrinoURI manually parses a Trino URI into a Config since trino.ParseDSN doesn't exist.
-func (f *TrinoDBFactory) parseTrinoURI(uri string) (*trino.Config, error) {
-	u, err := url.Parse(uri)
+	u, err := url.Parse(baseURI)
 	if err != nil {
-		return nil, err
+		return "", f.errorHelper.InvalidArgument("invalid DSN format: %v", err)
 	}
 
-	cfg := &trino.Config{
-		ServerURI: uri,
-	}
+	u.User = f.applyCredentialOverrides(u.User, username, password)
 
-	// Extract query parameters and map them to Config fields
-	if u.RawQuery != "" {
-		values := u.Query()
-		if catalog := values.Get("catalog"); catalog != "" {
-			cfg.Catalog = catalog
-		}
-		if schema := values.Get("schema"); schema != "" {
-			cfg.Schema = schema
-		}
-		if source := values.Get("source"); source != "" {
-			cfg.Source = source
-		}
-		if customClient := values.Get("custom_client"); customClient != "" {
-			cfg.CustomClientName = customClient
-		}
-		// Parse session_properties if present
-		if sessionProps := values.Get("session_properties"); sessionProps != "" {
-			cfg.SessionProperties = make(map[string]string)
-			for _, prop := range strings.Split(sessionProps, ",") {
-				if parts := strings.SplitN(prop, "=", 2); len(parts) == 2 {
-					cfg.SessionProperties[parts[0]] = parts[1]
-				}
-			}
-		}
-	}
-
-	return cfg, nil
+	return u.String(), nil
 }
 
-// updateConfigCredentials updates the ServerURI in the config with new credentials.
-func (f *TrinoDBFactory) updateConfigCredentials(cfg *trino.Config, username, password string) error {
-	// Parse the current ServerURI
-	if cfg.ServerURI == "" {
-		return f.errorHelper.InvalidArgument("config ServerURI is empty")
+// applyCredentialOverrides contains username and password override logic
+func (f *TrinoDBFactory) applyCredentialOverrides(existing *url.Userinfo, username, password string) *url.Userinfo {
+	if username == "" && password == "" {
+		return existing
 	}
 
-	u, err := url.Parse(cfg.ServerURI)
-	if err != nil {
-		return f.errorHelper.InvalidArgument("invalid ServerURI format: %v", err)
+	user := ""
+	pass := ""
+	hasPass := false
+
+	if existing != nil {
+		user = existing.Username()
+		pass, hasPass = existing.Password()
 	}
 
-	// Set new credentials
 	if username != "" {
-		if password != "" {
-			u.User = url.UserPassword(username, password)
-		} else {
-			u.User = url.User(username)
-		}
+		user = username
+	}
+	if password != "" {
+		pass = password
+		hasPass = true
 	}
 
-	cfg.ServerURI = u.String()
-	return nil
+	if hasPass {
+		return url.UserPassword(user, pass)
+	}
+	return url.User(user)
 }
 
 // Ensure TrinoDBFactory implements sqlwrapper.DBFactory

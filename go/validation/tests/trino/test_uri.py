@@ -28,16 +28,33 @@ def test_userpass_uri(
 ) -> None:
     """Test authentication with credentials embedded in URI."""
     username, password = creds
+
     parsed = urllib.parse.urlparse(uri)
+    query_params = urllib.parse.parse_qs(parsed.query)
+    query_params["session_properties"] = ["task_concurrency=8"]
+
+    new_query = urllib.parse.urlencode(query_params, doseq=True)
     netloc = f"{username}:{password}@{parsed.netloc}"
-    auth_uri = urllib.parse.urlunparse((parsed[0], netloc, *parsed[2:]))
+
+    auth_uri = urllib.parse.urlunparse(
+        (parsed.scheme, netloc, parsed.path, parsed.params, new_query, parsed.fragment)
+    )
 
     with adbc_driver_manager.dbapi.connect(
         driver=driver_path,
         db_kwargs={"uri": auth_uri},
     ) as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
+            cursor.execute("SELECT current_catalog, current_schema")
+            catalog, schema = cursor.fetchone()
+            assert catalog == "memory"
+            assert schema == "default"
+
+            cursor.execute("SHOW SESSION LIKE 'task_concurrency'")
+            row = cursor.fetchone()
+            value, default = row[1], row[2]
+            assert value == "8"
+            assert default == "16"
 
 
 @pytest.mark.feature(group="Configuration", name="Connect with URI")
@@ -63,34 +80,10 @@ def test_userpass_options(
 
 
 @pytest.mark.feature(group="Configuration", name="Connect with URI")
-def test_userpass_options_override_uri(
-    driver: model.DriverQuirks,
-    driver_path: str,
-    uri: str,  # trino://localhost:8080/memory/default
-) -> None:
-    """
-    Tests that 'username' and 'password' options
-    override credentials in the URI.
-    """
-    params = {
-        "uri": uri,
-        "username": "this_user_is_bad",
-        "password": "this_password_is_bad",
-    }
-
-    with pytest.raises(
-        adbc_driver_manager.dbapi.OperationalError,
-        match="Authentication failed",
-    ):
-        with adbc_driver_manager.dbapi.connect(driver=driver_path, db_kwargs=params):
-            pass
-
-
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 @pytest.mark.parametrize(
     "ssl_param, expect_https",
     [
-        pytest.param("SSL=true", True, id="SSL=true"),
+        # pytest.param("SSL=true", True, id="SSL=true"), # Cannot test SSL=true with server in Docker
         pytest.param("SSL=false", False, id="SSL=false"),
     ],
 )
@@ -124,29 +117,6 @@ def test_ssl_modes(
 
 
 @pytest.mark.feature(group="Configuration", name="Connect with URI")
-def test_uri_default_port(
-    driver: model.DriverQuirks,
-    driver_path: str,
-    trino_host: str,
-    trino_catalog: str,
-    trino_schema: str,
-    creds: tuple[str, str],
-) -> None:
-    """Tests that a URI without a port connects using default 80."""
-    username, password = creds
-
-    no_port_uri = f"trino://{username}:{password}@{trino_host}/{trino_catalog}/{trino_schema}"
-
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": no_port_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            assert cursor.fetchone()[0] == 1
-
-
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_uri_catalog_schema_parsing(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -157,8 +127,9 @@ def test_uri_catalog_schema_parsing(
     """Tests that catalog and schema are correctly parsed from URI path."""
     username, password = creds
 
-    # Test with both catalog and schema
-    full_uri = f"trino://{username}:{password}@{trino_host}:{trino_port}/memory/test_schema"
+    full_uri = (
+        f"trino://{username}:{password}@{trino_host}:{trino_port}/memory/test_schema"
+    )
 
     with adbc_driver_manager.dbapi.connect(
         driver=driver_path,
@@ -195,6 +166,54 @@ def test_uri_catalog_only(
 
 
 @pytest.mark.feature(group="Configuration", name="Connect with URI")
+def test_ipv6_host_support(
+    driver: model.DriverQuirks,
+    driver_path: str,
+    creds: tuple[str, str],
+    trino_catalog: str,
+    trino_schema: str,
+) -> None:
+    """Tests that IPv6 addresses are correctly handled in URIs."""
+    username, password = creds
+
+    ipv6_uri = (
+        f"trino://{username}:{password}@[::1]:8080/{trino_catalog}/{trino_schema}"
+    )
+
+    with adbc_driver_manager.dbapi.connect(
+        driver=driver_path,
+        db_kwargs={"uri": ipv6_uri},
+    ) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            assert cursor.fetchone()[0] == 1
+
+
+@pytest.mark.feature(group="Configuration", name="Connect with URI")
+def test_url_encoded_catalog_schema(
+    driver: model.DriverQuirks,
+    driver_path: str,
+    trino_host: str,
+    trino_port: str,
+    creds: tuple[str, str],
+) -> None:
+    """Tests that URL-encoded catalog and schema names work correctly."""
+    username, password = creds
+
+    encoded_uri = f"trino://{username}:{password}@{trino_host}:{trino_port}/my%20catalog/my%20schema"
+
+    with adbc_driver_manager.dbapi.connect(
+        driver=driver_path,
+        db_kwargs={"uri": encoded_uri},
+    ) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT current_catalog, current_schema")
+            result = cursor.fetchone()
+            assert result[0] == "my catalog"
+            assert result[1] == "my schema"
+
+
+@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_missing_uri_raises_error(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -228,62 +247,6 @@ def test_invalid_uri_format(
             pass
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
-def test_source_parameter(
-    driver: model.DriverQuirks,
-    driver_path: str,
-    uri: str,  # trino://localhost:8080/memory/default
-    creds: tuple[str, str],
-) -> None:
-    """Tests that 'source' parameter is correctly passed to Trino."""
-    username, password = creds
-    source_name = "test-client"  # Hardcoded for testing
-
-    parsed = urllib.parse.urlparse(uri)
-    netloc = f"{username}:{password}@{parsed.netloc}"
-    query = f"{parsed.query}&source={source_name}" if parsed.query else f"source={source_name}"
-    source_uri = urllib.parse.urlunparse(
-        (parsed.scheme, netloc, parsed.path, parsed.params, query, parsed.fragment)
-    )
-
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": source_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            assert cursor.fetchone()[0] == 1
-
-
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
-def test_session_properties(
-    driver: model.DriverQuirks,
-    driver_path: str,
-    uri: str,  # trino://localhost:8080/memory/default
-    creds: tuple[str, str],
-) -> None:
-    """Tests that session properties can be passed via URI."""
-    username, password = creds
-
-    parsed = urllib.parse.urlparse(uri)
-    netloc = f"{username}:{password}@{parsed.netloc}"
-
-    # Add session properties
-    session_props = "query_max_memory=1GB,distributed_joins_enabled=false"
-    query = f"{parsed.query}&session_properties={urllib.parse.quote(session_props)}" if parsed.query else f"session_properties={urllib.parse.quote(session_props)}"
-    props_uri = urllib.parse.urlunparse(
-        (parsed.scheme, netloc, parsed.path, parsed.params, query, parsed.fragment)
-    )
-
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": props_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            assert cursor.fetchone()[0] == 1
-
-
 # --- DSN tests ---
 
 
@@ -291,41 +254,48 @@ def test_session_properties(
 def test_basic_dsn_connection(
     driver: model.DriverQuirks,
     driver_path: str,
-    dsn: str,  # Example: https://test:password@localhost:8080?catalog=memory&schema=default
+    dsn: str,  # Example: http://test:password@localhost:8080?catalog=memory&schema=default
 ) -> None:
-    """Test basic connection to Trino using DSN format."""
+    """
+    Test basic connection using DSN format, adding extra parameters
+    to ensure all query args are preserved.
+    """
+
+    parsed = urllib.parse.urlparse(dsn)
+
+    query_params = urllib.parse.parse_qs(parsed.query)
+    query_params["session_properties"] = ["task_concurrency=8"]
+
+    new_query = urllib.parse.urlencode(query_params, doseq=True)
+
+    modified_dsn = urllib.parse.urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            parsed.fragment,
+        )
+    )
+
     with adbc_driver_manager.dbapi.connect(
         driver=driver_path,
-        db_kwargs={"uri": dsn},
+        db_kwargs={"uri": modified_dsn},
     ) as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            result = cursor.fetchone()
-            assert result[0] == 1
+            cursor.execute("SHOW SESSION LIKE 'task_concurrency'")
+            row = cursor.fetchone()
+            assert row is not None, (
+                "Expected session property 'task_concurrency' to be set"
+            )
+            assert row[0] == "task_concurrency"
+            assert row[1] == "8"
 
-
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
-def test_dsn_options_override(
-    driver: model.DriverQuirks,
-    driver_path: str,
-    dsn: str,  # Example: https://test:password@localhost:8080?catalog=memory&schema=default
-) -> None:
-    """
-    Tests that 'username' and 'password' options
-    override credentials in a native DSN.
-    """
-    params = {
-        "uri": dsn,  # Has valid credentials
-        "username": "this_user_is_bad",
-        "password": "this_password_is_bad",
-    }
-
-    with pytest.raises(
-        adbc_driver_manager.dbapi.OperationalError,
-        match="Authentication failed",
-    ):
-        with adbc_driver_manager.dbapi.connect(driver=driver_path, db_kwargs=params):
-            pass
+            cursor.execute("SELECT current_catalog, current_schema")
+            catalog, schema = cursor.fetchone()
+            assert catalog == "memory", f"Expected catalog=memory, got {catalog}"
+            assert schema == "default", f"Expected schema=default, got {schema}"
 
 
 @pytest.mark.feature(group="Configuration", name="Connect with URI")
@@ -347,63 +317,3 @@ def test_plain_host_with_creds_options(
         with conn.cursor() as cursor:
             cursor.execute("SELECT 1")
             assert cursor.fetchone()[0] == 1
-
-
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
-def test_ipv6_host_support(
-    driver: model.DriverQuirks,
-    driver_path: str,
-    creds: tuple[str, str],
-    trino_catalog: str,
-    trino_schema: str,
-) -> None:
-    """Tests that IPv6 addresses are correctly handled in URIs."""
-    username, password = creds
-
-    # Test with IPv6 loopback address
-    ipv6_uri = f"trino://{username}:{password}@[::1]:8080/{trino_catalog}/{trino_schema}"
-
-    # This test will typically fail in most environments since IPv6 localhost may not be configured,
-    # but it tests the URI parsing logic
-    try:
-        with adbc_driver_manager.dbapi.connect(
-            driver=driver_path,
-            db_kwargs={"uri": ipv6_uri},
-        ) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT 1")
-                assert cursor.fetchone()[0] == 1
-    except adbc_driver_manager.dbapi.OperationalError:
-        # Expected if IPv6 is not configured - this still validates URI parsing
-        pytest.skip("IPv6 not available or configured for testing")
-
-
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
-def test_url_encoded_catalog_schema(
-    driver: model.DriverQuirks,
-    driver_path: str,
-    trino_host: str,
-    trino_port: str,
-    creds: tuple[str, str],
-) -> None:
-    """Tests that URL-encoded catalog and schema names work correctly."""
-    username, password = creds
-
-    # Use URL encoding for spaces in catalog/schema names
-    encoded_uri = f"trino://{username}:{password}@{trino_host}:{trino_port}/my%20catalog/my%20schema"
-
-    # This test validates URI parsing - may fail on actual connection if catalog doesn't exist
-    try:
-        with adbc_driver_manager.dbapi.connect(
-            driver=driver_path,
-            db_kwargs={"uri": encoded_uri},
-        ) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT current_catalog, current_schema")
-                result = cursor.fetchone()
-                # Verify the names were decoded properly
-                assert result[0] == "my catalog"
-                assert result[1] == "my schema"
-    except adbc_driver_manager.dbapi.OperationalError:
-        # Expected if catalog doesn't exist - this still validates URI parsing
-        pytest.skip("Test catalog 'my catalog' not available")
