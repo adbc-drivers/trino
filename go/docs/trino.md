@@ -49,6 +49,18 @@ Components:
 Reserved characters in URI elements must be URI-encoded. For example, `@` becomes `%40`. If you include a zone ID in an IPv6 address, the `%` character used as the separator must be replaced with `%25`.
 :::
 
+### HTTPS/SSL Configuration
+
+HTTP Basic authentication is only supported on encrypted connections over HTTPS.
+
+By default, connections use HTTP. To connect using HTTPS, add `SSL=true` as a query parameter:
+
+- `trino://localhost:8080/catalog?SSL=true` → Uses HTTPS on port 8080
+- `trino://localhost:8443/catalog?SSL=true` → Uses HTTPS on port 8443
+- `trino://localhost:8080/catalog` → Uses HTTP on port 8080
+- `trino://localhost/catalog?SSL=true` → Uses HTTPS on default port 443
+- `trino://localhost/catalog` → Uses HTTP on default port 80
+
 See [Trino JDBC Documentation](https://trino.io/docs/current/client/jdbc.html#parameter-reference) for complete parameter reference and [Trino Concepts](https://trino.io/docs/current/overview/concepts.html#catalog) for more information.
 
 Examples:
