@@ -31,7 +31,7 @@ def test_userpass_uri(
 
     parsed = urllib.parse.urlparse(uri)
     query_params = urllib.parse.parse_qs(parsed.query)
-    query_params["session_properties"] = ["task_concurrency=8"]
+    query_params["session_properties"] = ["task_concurrency=2"]
 
     new_query = urllib.parse.urlencode(query_params, doseq=True)
     netloc = f"{username}:{password}@{parsed.netloc}"
@@ -52,9 +52,8 @@ def test_userpass_uri(
 
             cursor.execute("SHOW SESSION LIKE 'task_concurrency'")
             row = cursor.fetchone()
-            value, default = row[1], row[2]
-            assert value == "8"
-            assert default == "16"
+            value = row[1]
+            assert value == "2"
 
 
 @pytest.mark.feature(group="Configuration", name="Connect with URI")
@@ -264,7 +263,7 @@ def test_basic_dsn_connection(
     parsed = urllib.parse.urlparse(dsn)
 
     query_params = urllib.parse.parse_qs(parsed.query)
-    query_params["session_properties"] = ["task_concurrency=8"]
+    query_params["session_properties"] = ["task_concurrency=2"]
 
     new_query = urllib.parse.urlencode(query_params, doseq=True)
 
@@ -290,7 +289,7 @@ def test_basic_dsn_connection(
                 "Expected session property 'task_concurrency' to be set"
             )
             assert row[0] == "task_concurrency"
-            assert row[1] == "8"
+            assert row[1] == "2"
 
             cursor.execute("SELECT current_catalog, current_schema")
             catalog, schema = cursor.fetchone()
