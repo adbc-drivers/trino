@@ -18,7 +18,7 @@
 {{ cross_reference|safe }}
 # Trino Driver {{ version }}
 
-{{ version_header|safe }}
+{{ heading|safe }}
 
 This driver provides access to [Trino][trino], a free and
 open-source distributed SQL query engine.
@@ -82,3 +82,7 @@ The driver also supports the Trino DSN format (see [Go Trino Client documentatio
 {{ footnotes|safe }}
 
 [trino]: https://trino.io/
+
+## Versions Tested
+
+{{ version_detail|safe }}
