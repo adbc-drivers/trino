@@ -16,7 +16,7 @@
 ---
 
 {{ cross_reference|safe }}
-# Trino Driver {{ version }}
+# Trino {{ version }}
 
 {{ heading|safe }}
 
