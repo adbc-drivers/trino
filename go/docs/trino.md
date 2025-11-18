@@ -23,11 +23,31 @@
 This driver provides access to [Trino][trino], a free and
 open-source distributed SQL query engine.
 
-## Installation & Quickstart
+## Installation
 
-The driver can be installed with `dbc`.
+The Trino driver can be installed with [dbc](https://docs.columnar.tech/dbc):
+
+```bash
+dbc install trino
+
+```
+
+## Connecting
 
 To use the driver, provide a Trino connection string as the `uri` option. The driver supports URI format and DSN-style connection strings, but URIs are recommended.
+
+```python
+from adbc_driver_manager import dbapi
+
+dbapi.connect(
+  driver="trino",
+  db_kwargs={
+      "uri": "http://user@localhost:8080?catalog=tcph&schema=tiny"
+  }
+)
+```
+
+Note: The example above is for Python using the [adbc-driver-manager](https://pypi.org/project/adbc-driver-manager) package but the process will be similar for other driver managers.
 
 ## Connection String Format
 
