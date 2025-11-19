@@ -99,10 +99,16 @@ The driver also supports the Trino DSN format (see [Go Trino Client documentatio
 
 {{ types|safe }}
 
+## Compatibility
+
+{{ compatibility_info|safe }}
+
+## Previous Versions
+
+To see documentation for previous versions of this driver, see the following:
+
+- [v0.1.0](./v0.1.0.md)
+
 {{ footnotes|safe }}
 
 [trino]: https://trino.io/
-
-## Versions Tested
-
-{{ version_detail|safe }}
