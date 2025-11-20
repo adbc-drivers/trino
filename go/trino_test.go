@@ -773,8 +773,7 @@ func TestURIParsing(t *testing.T) {
 			result, err := factory.BuildTrinoDSN(opts)
 
 			if tt.shouldError {
-				require.Error(t, err, "expected error but got none")
-				assert.Contains(t, err.Error(), tt.errorContains)
+				require.ErrorContains(t, err, tt.errorContains)
 				return
 			}
 
