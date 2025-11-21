@@ -18,16 +18,36 @@
 {{ cross_reference|safe }}
 # Trino Driver {{ version }}
 
-{{ version_header|safe }}
+{{ heading|safe }}
 
 This driver provides access to [Trino][trino], a free and
 open-source distributed SQL query engine.
 
-## Installation & Quickstart
+## Installation
 
-The driver can be installed with `dbc`.
+The Trino driver can be installed with [dbc](https://docs.columnar.tech/dbc):
+
+```bash
+dbc install trino
+
+```
+
+## Connecting
 
 To use the driver, provide a Trino connection string as the `uri` option. The driver supports URI format and DSN-style connection strings, but URIs are recommended.
+
+```python
+from adbc_driver_manager import dbapi
+
+dbapi.connect(
+  driver="trino",
+  db_kwargs={
+      "uri": "http://user@localhost:8080?catalog=tcph&schema=tiny"
+  }
+)
+```
+
+Note: The example above is for Python using the [adbc-driver-manager](https://pypi.org/project/adbc-driver-manager) package but the process will be similar for other driver managers.
 
 ## Connection String Format
 
@@ -37,12 +57,12 @@ trino://[user[:password]@]host[:port][/catalog[/schema]][?attribute1=value1&attr
 
 Components:
 - Scheme: trino:// (required)
-- User: Optional (for authentication)
-- Password: Optional (for authentication, requires user)
-- Host: Required (no default)
-- Port: Optional (defaults to 8080 for HTTP, 8443 for HTTPS)
-- Catalog: Optional (Trino catalog name)
-- Schema: Optional (schema within catalog)
+- `user`: Optional (for authentication)
+- `password`: Optional (for authentication, requires user)
+- `host`: Required (no default)
+- `port`: Optional (defaults to 8080 for HTTP, 8443 for HTTPS)
+- `catalog`: Optional (Trino catalog name)
+- `schema`: Optional (schema within catalog)
 - Query params: Trino connection attributes
 
 :::{note}
@@ -64,10 +84,11 @@ By default, connections use HTTPS. To connect using HTTP, add `SSL=false` as a q
 See [Trino JDBC Documentation](https://trino.io/docs/current/client/jdbc.html#parameter-reference) for complete parameter reference and [Trino Concepts](https://trino.io/docs/current/overview/concepts.html#catalog) for more information.
 
 Examples:
-- trino://localhost:8080/hive/default
-- trino://user:pass@trino.example.com:8080/postgresql/public
-- trino://trino.example.com/hive/sales?SSL=true
-- trino://user@localhost:8443/memory/default?SSL=true&source=myapp
+
+- `trino://localhost:8080/hive/default`
+- `trino://user:pass@trino.example.com:8080/postgresql/public`
+- `trino://trino.example.com/hive/sales?SSL=true`
+- `trino://user@localhost:8443/memory/default?SSL=true&source=myapp`
 
 The driver also supports the Trino DSN format (see [Go Trino Client documentation](https://github.com/trinodb/trino-go-client?tab=readme-ov-file#dsn-data-source-name)), but URIs are recommended.
 
@@ -78,6 +99,16 @@ The driver also supports the Trino DSN format (see [Go Trino Client documentatio
 ### Types
 
 {{ types|safe }}
+
+## Compatibility
+
+{{ compatibility_info|safe }}
+
+## Previous Versions
+
+To see documentation for previous versions of this driver, see the following:
+
+- [v0.1.0](./v0.1.0.md)
 
 {{ footnotes|safe }}
 
