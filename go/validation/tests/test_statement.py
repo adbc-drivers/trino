@@ -12,13 +12,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from adbc_drivers_validation.tests.statement import (
-    TestStatement,  # noqa: F401
-    generate_tests,
-)
+import adbc_drivers_validation.tests.statement as statement_tests
 
 from . import trino
 
 
 def pytest_generate_tests(metafunc) -> None:
-    return generate_tests(trino.QUIRKS, metafunc)
+    return statement_tests.generate_tests(trino.QUIRKS, metafunc)
+
+
+class TestStatement(statement_tests.TestStatement):
+    def test_rows_affected(self, driver, conn) -> None:
+        # Trino can't update rows
+        table_name = "test_rows_affected"
+        with conn.cursor() as cursor:
+            cursor.adbc_statement.set_sql_query(
+                driver.drop_table(table_name="test_rows_affected")
+            )
+            cursor.adbc_statement.execute_update()
+
+            cursor.adbc_statement.set_sql_query(f"CREATE TABLE {table_name} (id INT)")
+            rows_affected = cursor.adbc_statement.execute_update()
+
+            if driver.features.statement_rows_affected:
+                assert rows_affected == 0
+            else:
+                assert rows_affected == -1
+
+            cursor.adbc_statement.set_sql_query(
+                f"INSERT INTO {table_name} (id) VALUES (1)"
+            )
+            rows_affected = cursor.adbc_statement.execute_update()
+            if driver.features.statement_rows_affected:
+                assert rows_affected == 1
+            else:
+                assert rows_affected == -1
+
+            cursor.adbc_statement.set_sql_query(
+                driver.drop_table(table_name="test_rows_affected")
+            )
+            cursor.adbc_statement.execute_update()
