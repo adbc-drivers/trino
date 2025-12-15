@@ -17,11 +17,11 @@ module github.com/adbc-drivers/trino
 go 1.25.5
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20251211214044-774ecc5d6d5e
-	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20251211214044-774ecc5d6d5e
-	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20251211214044-774ecc5d6d5e
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20251215145213-df04bfe8de4f
+	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20251215145213-df04bfe8de4f
+	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20251204005500-ef1acb8b4023
 	github.com/apache/arrow-adbc/go/adbc v1.9.0
-	github.com/apache/arrow-go/v18 v18.5.0-rc1
+	github.com/apache/arrow-go/v18 v18.5.0
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.11.1
 	github.com/trinodb/trino-go-client v0.333.0
@@ -71,13 +71,13 @@ require (
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/telemetry v0.0.0-20251208220230-2638a1023523 // indirect
+	golang.org/x/telemetry v0.0.0-20251215142616-e75fd47794af // indirect
 	golang.org/x/text v0.32.0 // indirect
 	golang.org/x/tools v0.40.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20251213004720-97cd9d5aeac2 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251213004720-97cd9d5aeac2 // indirect
 	google.golang.org/grpc v1.77.0 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

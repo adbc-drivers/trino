@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 
@@ -35,7 +36,7 @@ func NewTrinoDBFactory() *TrinoDBFactory {
 }
 
 // CreateDB creates a *sql.DB using sql.Open with a Trino-specific DSN.
-func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts map[string]string) (*sql.DB, error) {
+func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts map[string]string, logger *slog.Logger) (*sql.DB, error) {
 	dsn, err := f.BuildTrinoDSN(opts)
 	if err != nil {
 		return nil, err
