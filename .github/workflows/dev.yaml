@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# This is a common workflow for performing basic PR checks like running
+# pre-commit.
+
 name: Dev
 
 on:
@@ -20,9 +23,47 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
 permissions:
   contents: read
 
 jobs:
   lint:
-    uses: adbc-drivers/dev/.github/workflows/dev.yaml@742df4896dbb58618cedc0a635f33bdcff3ffb5a
+    name: "lint & pre-commit"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c  # v6.1.0
+        with:
+          cache-dependency-path: go/go.sum
+          check-latest: true
+          go-version-file: go/go.mod
+
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548  # v6.1.0
+        with:
+          python-version: "3.x"
+
+      - name: Install
+        run: pip install pre-commit
+
+      - name: pre-commit (cache)
+        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb  # v5.0.1
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: pre-commit
+        run: |
+          pre-commit run --all-files --color=always --show-diff-on-failure --verbose

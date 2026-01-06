@@ -1,0 +1,438 @@
+# Copyright (c) 2025 ADBC Drivers Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# !!!! AUTO-GENERATED FILE.  DO NOT EDIT. !!!!
+# USE adbc-gen-workflow (see adbc-drivers/dev) TO UPDATE THIS FILE.
+
+# This is a common workflow for building & testing Go drivers:
+#
+# - Build the driver
+# - Start dependencies
+# - Run tests
+# - Build the shared library
+
+name: Go Release
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/go_release.yaml
+
+  push:
+    tags:
+      - "go/v**"
+
+  workflow_dispatch: {}
+
+
+concurrency:
+  # Must share concurrency group with release workflow since it also builds/tests
+  group: ${{ github.repository }}-${{ github.ref }}-ci
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: "Test/${{ matrix.platform }}_${{ matrix.arch }}"
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { platform: linux, arch: amd64, runner: ubuntu-latest }
+          - { platform: macos, arch: arm64, runner: macos-latest }
+          - { platform: win, arch: amd64, runner: windows-latest }
+    permissions:
+      contents: read
+    steps:
+      - name: free up disk space
+        if: runner.os != 'Windows'
+        run: |
+          # Preinstalled tools use a lot of disk space, free up some space
+          # https://github.com/actions/runner-images/issues/2840
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c  # v6.1.0
+        with:
+          cache-dependency-path: go/go.sum
+          check-latest: true
+          go-version-file: go/go.mod
+
+      - uses: prefix-dev/setup-pixi@82d477f15f3a381dbcc8adc1206ce643fe110fb7  # v0.9.3
+        with:
+          pixi-version: v0.50.2
+          run-install: false
+
+
+      - name: Build
+        working-directory: go
+        run: |
+          go build ./...
+
+      - name: Start Test Dependencies
+        # Can't use Docker on macOS AArch64 runners, and Windows containers
+        # work but often the container doesn't support Windows
+        if: runner.os == 'Linux'
+        working-directory: go
+        run: |
+          if [[ -f compose.yaml ]]; then
+            if ! docker compose up --detach --wait test-service; then
+              echo "Service failed to start"
+              echo "Logs:"
+              docker compose logs test-service
+              exit 1
+            fi
+          fi
+
+      - name: Test
+        if: runner.os == 'Linux'
+        working-directory: go
+        run: |
+          set -a
+          if [[ -f .env ]]; then
+            source .env
+          fi
+          if [[ -f .env.ci ]]; then
+            source .env.ci
+          fi
+          set +a
+
+          if [[ -n "${{ secrets.environment }}" ]]; then
+            echo "Loading secret environment variables"
+            eval "${{ secrets.environment }}"
+          fi
+
+          if [[ -f ci/scripts/pre-test.sh ]]; then
+            echo "Loading pre-test"
+            ./ci/scripts/pre-test.sh
+          fi
+
+          go test -tags assert -v ./...
+
+          if [[ -f ci/scripts/post-test.sh ]]; then
+            ./ci/scripts/post-test.sh
+          fi
+
+      - name: go mod tidy
+        if: runner.os == 'Linux'
+        working-directory: go
+        run: |
+          go mod tidy --diff
+
+      - name: Test
+        if: runner.os != 'Linux'
+        working-directory: go
+        run: |
+          go test -tags assert -v ./...
+
+  validate:
+    name: "Validate/${{ matrix.platform }}_${{ matrix.arch }}"
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # I think we only need to test one platform, but we can change that later
+          - { platform: linux, arch: amd64, runner: ubuntu-latest }
+    permissions:
+      contents: read
+    steps:
+      - name: free up disk space
+        if: runner.os != 'Windows'
+        run: |
+          # Preinstalled tools use a lot of disk space, free up some space
+          # https://github.com/actions/runner-images/issues/2840
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c  # v6.1.0
+        with:
+          cache-dependency-path: go/go.sum
+          check-latest: true
+          go-version-file: go/go.mod
+
+      - uses: prefix-dev/setup-pixi@82d477f15f3a381dbcc8adc1206ce643fe110fb7  # v0.9.3
+        with:
+          pixi-version: v0.50.2
+          run-install: false
+
+
+      - name: Build Library
+        working-directory: go
+        run: |
+          if [[ -f ci/scripts/pre-build.sh ]]; then
+            ./ci/scripts/pre-build.sh test ${{ matrix.platform }} ${{ matrix.arch }}
+          fi
+          set -a
+          if [[ -f .env.release ]]; then
+            source .env.test
+          fi
+          set +a
+          pixi run adbc-make build DEBUG=true VERBOSE=true DRIVER=trino
+
+      - name: Start Test Dependencies
+        # Can't use Docker on macOS AArch64 runners, and Windows containers
+        # work but often the container doesn't support Windows
+        if: runner.os == 'Linux'
+        working-directory: go
+        run: |
+          if [[ -f compose.yaml ]]; then
+            if ! docker compose up --detach --wait test-service; then
+              echo "Service failed to start"
+              echo "Logs:"
+              docker compose logs test-service
+              exit 1
+            fi
+          fi
+
+      - name: Validate
+        if: runner.os == 'Linux'
+        working-directory: go
+        run: |
+          set -a
+          if [[ -f .env ]]; then
+            source .env
+          fi
+          if [[ -f .env.ci ]]; then
+            source .env.ci
+          fi
+          set +a
+
+          if [[ -n "${{ secrets.environment }}" ]]; then
+            echo "Loading secret environment variables"
+            eval "${{ secrets.environment }}"
+          fi
+
+          if [[ -f ci/scripts/pre-test.sh ]]; then
+            echo "Loading pre-test"
+            ./ci/scripts/pre-test.sh
+          fi
+
+          docker ps
+          pixi run validate
+
+          if [[ -f ci/scripts/post-test.sh ]]; then
+            ./ci/scripts/post-test.sh
+          fi
+
+      - name: Generate docs
+        working-directory: go
+        run: |
+          pixi run gendocs --output generated
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: docs
+          path: "go/generated/trino.md"
+          retention-days: 2
+
+  build:
+    name: "Build trino/${{ matrix.platform }}_${{ matrix.arch }}"
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { platform: linux, arch: amd64, runner: ubuntu-latest }
+          - { platform: linux, arch: arm64, runner: ubuntu-24.04-arm }
+          - { platform: macos, arch: arm64, runner: macos-latest }
+          - { platform: windows, arch: amd64, runner: windows-latest }
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c  # v6.1.0
+        with:
+          cache-dependency-path: go/go.sum
+          check-latest: true
+          go-version-file: go/go.mod
+
+      - uses: prefix-dev/setup-pixi@82d477f15f3a381dbcc8adc1206ce643fe110fb7  # v0.9.3
+        with:
+          pixi-version: v0.50.2
+          run-install: false
+
+      - name: Install dev tools
+        working-directory: go
+        run: |
+          pixi install
+
+      - name: Log in to ghcr.io
+        if: runner.os == 'Linux'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build Library
+        working-directory: go
+        run: |
+          if [[ -f ci/scripts/pre-build.sh ]]; then
+            ./ci/scripts/pre-build.sh release ${{ matrix.platform }} ${{ matrix.arch }}
+          fi
+          set -a
+          if [[ -f .env.release ]]; then
+            source .env.release
+          fi
+          set +a
+          pixi run adbc-make check CI=true VERBOSE=true DRIVER=trino
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: drivers-${{ matrix.platform }}-${{ matrix.arch }}
+          path: "go/build/libadbc_driver_trino.*"
+          retention-days: 2
+
+  package:
+    name: "Generate Packages"
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c  # v6.1.0
+        with:
+          check-latest: true
+          go-version: "stable"
+
+      - uses: prefix-dev/setup-pixi@82d477f15f3a381dbcc8adc1206ce643fe110fb7  # v0.9.3
+        with:
+          pixi-version: v0.50.2
+          run-install: false
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          pattern: "drivers-*"
+          path: "~/drivers"
+
+      - name: Install tools
+        working-directory: go
+        run: |
+          # XXX: can't install go-licenses under go 1.25
+          # https://github.com/google/go-licenses/issues/312
+          git clone --depth=1 https://github.com/google/go-licenses
+          git config --global --add 'url.https://github.com/.insteadOf' ssh://git@github.com/
+          pushd go-licenses
+          go get -u
+          # Silent break: https://github.com/spf13/cobra/pull/2303
+          # Manually edit the go.mod to get around this for now
+          sed -i 's|github.com/spf13/pflag v1.0.8|github.com/spf13/pflag v1.0.7|g' go.mod
+          go mod tidy
+          go install .
+          popd
+
+      - name: Generate packages
+        working-directory: go
+        run: |
+          pixi install
+
+          pixi run adbc-gen-package \
+            --name trino \
+            --root $(pwd) \
+            --manifest-template manifest.toml \
+            ${{ (inputs.release && '--release') || '' }}\
+            -o ~/packages \
+            ~/drivers/drivers-*-*/
+
+          ls ~/packages
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        with:
+          name: all-packages
+          path: ~/packages
+          retention-days: 7
+
+  release:
+    name: "Release"
+    runs-on: ubuntu-latest
+    needs:
+      - package
+      - validate
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c  # v6.1.0
+        with:
+          check-latest: true
+          go-version: "stable"
+
+      - uses: prefix-dev/setup-pixi@82d477f15f3a381dbcc8adc1206ce643fe110fb7  # v0.9.3
+        with:
+          pixi-version: v0.50.2
+          run-install: false
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: "all-packages"
+          path: "~/packages"
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: "docs"
+          path: "~/packages"
+
+      - name: Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: go
+        run: |
+          ref=${{ github.ref }}
+          tag=${ref#"refs/tags/"}
+
+          pixi run release $(pwd) $tag
+          gh release upload $tag $(find ~/packages -name '*.tar.gz') $(find ~/packages -name 'manifest.yaml') $(find ~/packages -name '*.md')
+
+      - name: Release (dry-run)
+        if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: go
+        run: |
+          git tag go/v1000.0.0
+          tag=go/v1000.0.0
+
+          pixi run release --dry-run $(pwd) $tag
+          echo gh release upload $tag $(find ~/packages -name '*.tar.gz') $(find ~/packages -name 'manifest.yaml') $(find ~/packages -name '*.md')
