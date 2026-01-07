@@ -64,7 +64,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/ec/f7/6a7effd2526f64bcb0d2264c0dbebc7f8508add3f2c0748540d1448a24a3/sqlglot-28.5.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/bd/75/8539d011f6be8e29f339c42e633aae3cb73bffa95dd0f9adec09b9c58e85/tomlkit-0.13.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/6d/b9/4095b668ea3678bf6a0af005527f39de12fb026516fb3df17495a733b7f8/urllib3-2.6.2-py3-none-any.whl
-      - pypi: git+https://github.com/adbc-drivers/validation#1ec390331f4b841fc321f4380d6e1d7cc220c0c3
+      - pypi: git+https://github.com/adbc-drivers/validation#8c46c5e85f73ac5deb9779b076935f6f29e29707
       - pypi: https://files.pythonhosted.org/packages/38/1b/1d3af9103dc3f0758f01e5c90113753254cc47ab9a3767a726d2dafcf5aa/whenever-0.9.4-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       linux-aarch64:
@@ -124,7 +124,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/ec/f7/6a7effd2526f64bcb0d2264c0dbebc7f8508add3f2c0748540d1448a24a3/sqlglot-28.5.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/bd/75/8539d011f6be8e29f339c42e633aae3cb73bffa95dd0f9adec09b9c58e85/tomlkit-0.13.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/6d/b9/4095b668ea3678bf6a0af005527f39de12fb026516fb3df17495a733b7f8/urllib3-2.6.2-py3-none-any.whl
-      - pypi: git+https://github.com/adbc-drivers/validation#1ec390331f4b841fc321f4380d6e1d7cc220c0c3
+      - pypi: git+https://github.com/adbc-drivers/validation#8c46c5e85f73ac5deb9779b076935f6f29e29707
       - pypi: https://files.pythonhosted.org/packages/e2/10/b63b29ead140d671cefa50718e1e7c7a228e8eb335e009f72c154d8fcb2a/whenever-0.9.4-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       osx-arm64:
@@ -176,7 +176,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/ec/f7/6a7effd2526f64bcb0d2264c0dbebc7f8508add3f2c0748540d1448a24a3/sqlglot-28.5.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/bd/75/8539d011f6be8e29f339c42e633aae3cb73bffa95dd0f9adec09b9c58e85/tomlkit-0.13.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/6d/b9/4095b668ea3678bf6a0af005527f39de12fb026516fb3df17495a733b7f8/urllib3-2.6.2-py3-none-any.whl
-      - pypi: git+https://github.com/adbc-drivers/validation#1ec390331f4b841fc321f4380d6e1d7cc220c0c3
+      - pypi: git+https://github.com/adbc-drivers/validation#8c46c5e85f73ac5deb9779b076935f6f29e29707
       - pypi: https://files.pythonhosted.org/packages/d7/95/1b32ae824ece99ec1ad154f78cec1e092171666167d47df83039fa35804a/whenever-0.9.4-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       win-64:
@@ -232,7 +232,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/c7/b0/003792df09decd6849a5e39c28b513c06e84436a54440380862b5aeff25d/tzdata-2025.3-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c2/14/e2a54fabd4f08cd7af1c07030603c3356b74da07f7cc056e600436edfa17/tzlocal-5.3.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/6d/b9/4095b668ea3678bf6a0af005527f39de12fb026516fb3df17495a733b7f8/urllib3-2.6.2-py3-none-any.whl
-      - pypi: git+https://github.com/adbc-drivers/validation#1ec390331f4b841fc321f4380d6e1d7cc220c0c3
+      - pypi: git+https://github.com/adbc-drivers/validation#8c46c5e85f73ac5deb9779b076935f6f29e29707
       - pypi: https://files.pythonhosted.org/packages/9f/e7/84381106a701c812652405f4d74093f6da7c2748a639084fd2c092cd2c78/whenever-0.9.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
 packages:
@@ -338,7 +338,7 @@ packages:
   - requests
   - ruamel-yaml>=0.18.11,<0.19
   - tomlkit>=0.13.2,<0.14
-- pypi: git+https://github.com/adbc-drivers/validation#1ec390331f4b841fc321f4380d6e1d7cc220c0c3
+- pypi: git+https://github.com/adbc-drivers/validation#8c46c5e85f73ac5deb9779b076935f6f29e29707
   name: adbc-drivers-validation
   version: '0.1'
   requires_dist:

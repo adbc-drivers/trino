@@ -29,7 +29,6 @@ The Trino driver can be installed with [dbc](https://docs.columnar.tech/dbc):
 
 ```bash
 dbc install trino
-
 ```
 
 ## Connecting
@@ -47,9 +46,9 @@ dbapi.connect(
 )
 ```
 
-Note: The example above is for Python using the [adbc-driver-manager](https://pypi.org/project/adbc-driver-manager) package but the process will be similar for other driver managers.
+Note: The example above is for Python using the [adbc-driver-manager](https://pypi.org/project/adbc-driver-manager) package but the process will be similar for other driver managers.  See [adbc-quickstarts](https://github.com/columnar-tech/adbc-quickstarts).
 
-## Connection String Format
+### Connection String Format
 
 ```
 trino://[user[:password]@]host[:port][/catalog[/schema]][?attribute1=value1&attribute2=value2...]
@@ -69,7 +68,7 @@ Components:
 Reserved characters in URI elements must be URI-encoded. For example, `@` becomes `%40`. If you include a zone ID in an IPv6 address, the `%` character used as the separator must be replaced with `%25`.
 :::
 
-### HTTPS/SSL Configuration
+#### HTTPS/SSL Configuration
 
 HTTP Basic authentication is only supported on encrypted connections over HTTPS.
 
@@ -109,6 +108,7 @@ The driver also supports the Trino DSN format (see [Go Trino Client documentatio
 
 To see documentation for previous versions of this driver, see the following:
 
+- [v0.2.0](./v0.2.0.md)
 - [v0.1.0](./v0.1.0.md)
 
 {{ footnotes|safe }}
