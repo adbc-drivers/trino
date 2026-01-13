@@ -20,7 +20,7 @@ require (
 	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260102010650-8001f6ce47a7
 	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260102010650-8001f6ce47a7
 	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260102010650-8001f6ce47a7
-	github.com/apache/arrow-adbc/go/adbc v1.9.0
+	github.com/apache/arrow-adbc/go/adbc v1.10.0
 	github.com/apache/arrow-go/v18 v18.5.0
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.11.1
