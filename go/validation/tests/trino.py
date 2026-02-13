@@ -37,6 +37,7 @@ class TrinoQuirks(model.DriverQuirks):
         statement_bulk_ingest_temporary=False,
         statement_execute_schema=True,
         statement_get_parameter_schema=False,
+        statement_prepare=True,
         statement_rows_affected=True,
         current_catalog="memory",
         current_schema="default",
