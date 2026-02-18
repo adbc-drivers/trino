@@ -227,10 +227,7 @@ func (q *TrinoQuirks) SampleTableSchemaMetadata(tblName string, dt arrow.DataTyp
 func (q *TrinoQuirks) Alloc() memory.Allocator      { return q.mem }
 func (q *TrinoQuirks) BindParameter(idx int) string { return "?" }
 
-// SupportsBulkIngest returns false because Trino doesn't support "NULLS LAST" syntax
-// used in the ADBC validation bulk ingest tests.
-// TODO: enable this once the validation framework is fixed.
-// Filed issue: https://github.com/adbc-drivers/driverbase-go/issues/69
+// TODO(https://github.com/adbc-drivers/driverbase-go/issues/126)
 func (q *TrinoQuirks) SupportsBulkIngest(string) bool              { return false }
 func (q *TrinoQuirks) SupportsConcurrentStatements() bool          { return false }
 func (q *TrinoQuirks) SupportsCurrentCatalogSchema() bool          { return true }
