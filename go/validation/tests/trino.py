@@ -23,14 +23,15 @@ class TrinoQuirks(model.DriverQuirks):
     driver = "adbc_driver_trino"
     driver_name = "ADBC Driver Foundry Driver for Trino"
     vendor_name = "Trino"
-    vendor_version = re.compile(r"Trino [0-9]+")
-    short_version = "4nn"
+    vendor_version = re.compile(r"Trino 479")
+    short_version = "479"
     features = model.DriverFeatures(
         connection_get_table_schema=True,
         connection_transactions=False,
         get_objects_constraints_foreign=False,
         get_objects_constraints_primary=False,
         get_objects_constraints_unique=False,
+        statement_bind=True,
         statement_bulk_ingest=True,
         statement_bulk_ingest_catalog=False,
         statement_bulk_ingest_schema=False,
