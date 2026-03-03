@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2026 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.github/workflows/dev_issues.yaml
-go/pkg/adbc.h
-go/pkg/driver.go
-go/pkg/utils.c
-go/pkg/utils.h
+import adbc_driver_manager.dbapi
+import pytest
+
+
+def test_package() -> None:
+    # Just ensure the driver itself loads
+    uri = "trino://localhost:1234"
+    with pytest.raises(adbc_driver_manager.dbapi.Error, match="query failed"):
+        with adbc_driver_manager.dbapi.connect(
+            driver="trino", uri=uri, autocommit=True
+        ) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT 1")

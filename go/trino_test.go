@@ -126,7 +126,7 @@ func (q *TrinoQuirks) CreateSampleTable(tableName string, r arrow.RecordBatch) e
 			insertQuery.WriteString(tableName)
 			insertQuery.WriteString(" VALUES (")
 
-			values := make([]interface{}, r.NumCols())
+			values := make([]any, r.NumCols())
 			for col := range r.NumCols() {
 				column := r.Column(int(col))
 				if column.IsNull(int(row)) {
@@ -153,7 +153,7 @@ func (q *TrinoQuirks) CreateSampleTable(tableName string, r arrow.RecordBatch) e
 			}
 
 			// Build placeholders and collect non-null values for prepared statement
-			var queryParams []interface{}
+			var queryParams []any
 			for i, val := range values {
 				if i > 0 {
 					insertQuery.WriteString(", ")
@@ -242,7 +242,7 @@ func (q *TrinoQuirks) SupportsErrorIngestIncompatibleSchema() bool { return fals
 func (q *TrinoQuirks) Catalog() string                             { return "memory" }
 func (q *TrinoQuirks) DBSchema() string                            { return "default" }
 
-func (q *TrinoQuirks) GetMetadata(code adbc.InfoCode) interface{} {
+func (q *TrinoQuirks) GetMetadata(code adbc.InfoCode) any {
 	switch code {
 	case adbc.InfoDriverName:
 		return "ADBC Driver Foundry Driver for Trino"

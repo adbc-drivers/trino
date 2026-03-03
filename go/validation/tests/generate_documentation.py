@@ -27,9 +27,11 @@ if __name__ == "__main__":
     template = Path(__file__).parent.parent.parent / "docs/trino.md"
     template = template.resolve()
 
+    reports = [report.resolve() for report in Path(".").glob("validation-report*.xml")]
     generate_documentation.generate(
-        trino.QUIRKS,
-        Path("validation-report.xml").resolve(),
+        # Not fully set up to test multiple versions currently
+        lambda *args: trino.QUIRKS[0],
+        reports,
         template,
         args.output.resolve(),
     )

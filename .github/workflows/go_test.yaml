@@ -1,4 +1,4 @@
-# Copyright (c) 2025 ADBC Drivers Contributors
+# Copyright (c) 2025-2026 ADBC Drivers Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 # !!!! AUTO-GENERATED FILE.  DO NOT EDIT. !!!!
 # USE adbc-gen-workflow (see adbc-drivers/dev) TO UPDATE THIS FILE.
 
-# This is a common workflow for building & testing Go drivers:
+# This is a common workflow for building & testing drivers:
 #
 # - Build the driver
 # - Start dependencies
@@ -31,7 +31,6 @@ on:
     paths:
       - "go/**"
       - .github/workflows/go_test.yaml
-
   push:
     branches:
       - main
@@ -39,12 +38,9 @@ on:
       - "go/**"
       - .github/workflows/go_test.yaml
 
-  workflow_dispatch: {}
-
 
 concurrency:
-  # Must share concurrency group with release workflow since it also builds/tests
-  group: ${{ github.repository }}-${{ github.ref }}-ci
+  group: ${{ github.repository }}-${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: true
 
 defaults:
@@ -61,7 +57,7 @@ jobs:
         include:
           - { platform: linux, arch: amd64, runner: ubuntu-latest }
           - { platform: macos, arch: arm64, runner: macos-latest }
-          - { platform: win, arch: amd64, runner: windows-latest }
+          - { platform: windows, arch: amd64, runner: windows-latest }
     permissions:
       contents: read
     steps:
@@ -76,6 +72,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          submodules: 'recursive'
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
@@ -85,13 +82,25 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e  # v0.9.4
         with:
-          pixi-version: v0.50.2
+          pixi-version: v0.63.2
           run-install: false
 
 
       - name: Build
         working-directory: go
         run: |
+          if [[ -f ci/scripts/pre-build.sh ]]; then
+            echo "Loading pre-build"
+            ./ci/scripts/pre-build.sh test ${{ matrix.platform }} ${{ matrix.arch }}
+          fi
+
+          set -a
+          if [[ -f .env.build ]]; then
+            echo "Loading .env.build"
+            source .env.build
+          fi
+          set +a
+
           go build ./...
 
       - name: Start Test Dependencies
@@ -110,26 +119,23 @@ jobs:
           fi
 
       - name: Test
-        if: runner.os == 'Linux'
         working-directory: go
         run: |
           set -a
           if [[ -f .env ]]; then
             source .env
           fi
+          if [[ -f .env.${{ matrix.platform }} ]]; then
+            source .env.${{ matrix.platform }}
+          fi
           if [[ -f .env.ci ]]; then
             source .env.ci
           fi
           set +a
 
-          if [[ -n "${{ secrets.environment }}" ]]; then
-            echo "Loading secret environment variables"
-            eval "${{ secrets.environment }}"
-          fi
-
           if [[ -f ci/scripts/pre-test.sh ]]; then
             echo "Loading pre-test"
-            ./ci/scripts/pre-test.sh
+            ./ci/scripts/pre-test.sh ${{ matrix.platform }} ${{ matrix.arch }}
           fi
 
           go test -tags assert -v ./...
@@ -143,12 +149,6 @@ jobs:
         working-directory: go
         run: |
           go mod tidy --diff
-
-      - name: Test
-        if: runner.os != 'Linux'
-        working-directory: go
-        run: |
-          go test -tags assert -v ./...
 
   validate:
     name: "Validate/${{ matrix.platform }}_${{ matrix.arch }}"
@@ -173,6 +173,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          submodules: 'recursive'
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
@@ -182,9 +183,16 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e  # v0.9.4
         with:
-          pixi-version: v0.50.2
+          pixi-version: v0.63.2
           run-install: false
 
+
+      - name: Log in to ghcr.io
+        if: runner.os == 'Linux'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build Library
         working-directory: go
@@ -193,12 +201,15 @@ jobs:
             ./ci/scripts/pre-build.sh test ${{ matrix.platform }} ${{ matrix.arch }}
           fi
           set -a
-          if [[ -f .env.release ]]; then
+          if [[ -f .env.build ]]; then
+            echo "Loading .env.build"
+            source .env.build
+          fi
+          if [[ -f .env.test ]]; then
             source .env.test
           fi
           set +a
-          pixi run adbc-make build DEBUG=true VERBOSE=true DRIVER=trino
-
+          pixi run adbc-make build DEBUG=true VERBOSE=true DRIVER=trino IMPL_LANG=go
       - name: Start Test Dependencies
         # Can't use Docker on macOS AArch64 runners, and Windows containers
         # work but often the container doesn't support Windows
@@ -222,19 +233,17 @@ jobs:
           if [[ -f .env ]]; then
             source .env
           fi
+          if [[ -f .env.${{ matrix.platform }} ]]; then
+            source .env.${{ matrix.platform }}
+          fi
           if [[ -f .env.ci ]]; then
             source .env.ci
           fi
           set +a
 
-          if [[ -n "${{ secrets.environment }}" ]]; then
-            echo "Loading secret environment variables"
-            eval "${{ secrets.environment }}"
-          fi
-
           if [[ -f ci/scripts/pre-test.sh ]]; then
             echo "Loading pre-test"
-            ./ci/scripts/pre-test.sh
+            ./ci/scripts/pre-test.sh ${{ matrix.platform }} ${{ matrix.arch }}
           fi
 
           docker ps
@@ -243,6 +252,12 @@ jobs:
           if [[ -f ci/scripts/post-test.sh ]]; then
             ./ci/scripts/post-test.sh
           fi
+
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
+        with:
+          name: validation-report
+          path: "go/validation-report.xml"
+          retention-days: 7
 
       - name: Generate docs
         working-directory: go
@@ -276,6 +291,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          submodules: 'recursive'
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
@@ -285,7 +301,7 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e  # v0.9.4
         with:
-          pixi-version: v0.50.2
+          pixi-version: v0.63.2
           run-install: false
 
       - name: Install dev tools
@@ -295,8 +311,10 @@ jobs:
 
       - name: Log in to ghcr.io
         if: runner.os == 'Linux'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build Library
         working-directory: go
@@ -305,11 +323,15 @@ jobs:
             ./ci/scripts/pre-build.sh release ${{ matrix.platform }} ${{ matrix.arch }}
           fi
           set -a
+          if [[ -f .env.build ]]; then
+            echo "Loading .env.build"
+            source .env.build
+          fi
           if [[ -f .env.release ]]; then
             source .env.release
           fi
           set +a
-          pixi run adbc-make check CI=true VERBOSE=true DRIVER=trino
+          pixi run adbc-make check CI=true VERBOSE=true DRIVER=trino IMPL_LANG=go
 
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
         with:
@@ -329,6 +351,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          submodules: 'recursive'
 
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
         with:
@@ -337,7 +360,7 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e  # v0.9.4
         with:
-          pixi-version: v0.50.2
+          pixi-version: v0.63.2
           run-install: false
 
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3  # v8.0.0
@@ -369,7 +392,7 @@ jobs:
           pixi run adbc-gen-package \
             --name trino \
             --root $(pwd) \
-            --manifest-template manifest.toml \
+            --manifest-template $(pwd)/manifest.toml \
             ${{ (inputs.release && '--release') || '' }}\
             -o ~/packages \
             ~/drivers/drivers-*-*/
@@ -382,11 +405,73 @@ jobs:
           path: ~/packages
           retention-days: 7
 
+  test-packages:
+    name: "Test Packages/${{ matrix.platform }}_${{ matrix.arch }}"
+    runs-on: ${{ matrix.runner }}
+    needs:
+      - package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux, arch: amd64, runner: ubuntu-latest }
+          - { platform: macos, arch: arm64, runner: macos-latest }
+          - { platform: windows, arch: amd64, runner: windows-latest }
+    steps:
+      # for now, install dbc from main
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
+        with:
+          go-version: 'stable'
+      - uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e  # v0.9.4
+        with:
+          pixi-version: v0.63.2
+          run-install: false
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3  # v8.0.0
+        with:
+          name: "all-packages"
+          path: "~/packages"
+      - name: install package
+        # dbc uses the filename as the driver name
+        run: |
+          echo "Installing dbc"
+          git clone --depth 1 https://github.com/columnar-tech/dbc
+          cd dbc
+          go build ./cmd/dbc
+          echo "Installed dbc"
+          ls -laR ~/packages
+          driver_pkg=$(find ~/packages -name '*_${{ matrix.platform }}_${{ matrix.arch }}_*.tar.gz')
+          echo "Installing ${driver_pkg}"
+          ./dbc install --no-verify "${driver_pkg}"
+          echo "Installed ${driver_pkg}"
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: 'recursive'
+      - name: load package
+        working-directory: go
+        run: |
+          if [[ -f ci/scripts/pre-build.sh ]]; then
+            echo "Loading pre-build"
+            ./ci/scripts/pre-build.sh test ${{ matrix.platform }} ${{ matrix.arch }}
+          fi
+          set -a
+          if [[ -f .env.build ]]; then
+            echo "Loading .env.build"
+            source .env.build
+          fi
+          if [[ -f .env.ci ]]; then
+            source .env.ci
+          fi
+          set +a
+          pixi exec -s adbc-driver-manager -s pyarrow -s pytest python -m pytest -vs ci/test_package.py
+
   release:
     name: "Release (Dry Run)"
     runs-on: ubuntu-latest
     needs:
       - package
+      - test-packages
       - validate
     permissions:
       contents: read
@@ -396,15 +481,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417  # v6.3.0
-        with:
-          check-latest: true
-          go-version: "stable"
+          submodules: 'recursive'
 
       - uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e  # v0.9.4
         with:
-          pixi-version: v0.50.2
+          pixi-version: v0.63.2
           run-install: false
 
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3  # v8.0.0
