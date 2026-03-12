@@ -19,7 +19,6 @@ import pytest
 from adbc_drivers_validation import model
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_userpass_uri(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -56,7 +55,6 @@ def test_userpass_uri(
             assert value == "2"
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_userpass_options(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -78,7 +76,6 @@ def test_userpass_options(
             cursor.execute("SELECT 1")
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 @pytest.mark.parametrize(
     "ssl_param, expect_https",
     [
@@ -115,7 +112,6 @@ def test_ssl_modes(
             assert result[0] == 1
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_uri_catalog_schema_parsing(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -139,7 +135,6 @@ def test_uri_catalog_schema_parsing(
             assert result[1] == "test_schema"
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_uri_catalog_only(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -164,7 +159,6 @@ def test_uri_catalog_only(
             assert result[0] == "memory"
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_ipv6_host_support(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -186,7 +180,6 @@ def test_ipv6_host_support(
             assert cursor.fetchone()[0] == 1
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_url_encoded_catalog_schema(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -210,7 +203,6 @@ def test_url_encoded_catalog_schema(
             assert result[1] == "my schema"
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_missing_uri_raises_error(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -227,7 +219,6 @@ def test_missing_uri_raises_error(
             pass
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_invalid_uri_format(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -247,7 +238,6 @@ def test_invalid_uri_format(
 # --- DSN tests ---
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_basic_dsn_connection(
     driver: model.DriverQuirks,
     driver_path: str,
@@ -295,7 +285,6 @@ def test_basic_dsn_connection(
             assert schema == "default", f"Expected schema=default, got {schema}"
 
 
-@pytest.mark.feature(group="Configuration", name="Connect with URI")
 def test_plain_host_with_creds_options(
     driver: model.DriverQuirks,
     driver_path: str,
