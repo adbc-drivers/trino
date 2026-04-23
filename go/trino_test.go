@@ -25,8 +25,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/adbc-drivers/driverbase-go/testutil"
 	"github.com/adbc-drivers/driverbase-go/driverbase"
+	"github.com/adbc-drivers/driverbase-go/testutil"
 	"github.com/adbc-drivers/driverbase-go/validation"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -289,16 +289,16 @@ func TestGetStatisticsIncludesCreatedTable(t *testing.T) {
 		drv := q.SetupDriver(t)
 		defer q.TearDownDriver(t, drv)
 
-		db, err := drv.NewDatabase(q.DatabaseOptions())
+		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
 		require.NoError(t, err)
 		defer func() {
-			require.NoError(t, db.Close())
+			require.NoError(t, db.Close(ctx))
 		}()
 
 		cnxn, err := db.Open(ctx)
 		require.NoError(t, err)
 		defer func() {
-			require.NoError(t, cnxn.Close())
+			require.NoError(t, cnxn.Close(ctx))
 		}()
 
 		tableName := "adbc_stats_test"
@@ -370,16 +370,16 @@ func TestGetStatisticsWithWildcardCatalog(t *testing.T) {
 		drv := q.SetupDriver(t)
 		defer q.TearDownDriver(t, drv)
 
-		db, err := drv.NewDatabase(q.DatabaseOptions())
+		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
 		require.NoError(t, err)
 		defer func() {
-			require.NoError(t, db.Close())
+			require.NoError(t, db.Close(ctx))
 		}()
 
 		cnxn, err := db.Open(ctx)
 		require.NoError(t, err)
 		defer func() {
-			require.NoError(t, cnxn.Close())
+			require.NoError(t, cnxn.Close(ctx))
 		}()
 
 		tableName := "adbc_stats_wildcard_test"

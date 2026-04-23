@@ -67,5 +67,5 @@ repos:
     name: go fix
     language: system
     types: [go]
-    entry: bash -c 'cd go && go fix'
+    entry: bash -c 'cd go && go fix ./...'
     pass_filenames: false
