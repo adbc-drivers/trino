@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+name: trino
 services:
   test-service:
     image: trinodb/trino:latest

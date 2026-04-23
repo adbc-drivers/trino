@@ -34,9 +34,9 @@ const (
 )
 
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
-func (c *trinoConnectionImpl) GetCurrentCatalog() (string, error) {
+func (c *trinoConnectionImpl) GetCurrentCatalog(ctx context.Context) (string, error) {
 	var catalog string
-	err := c.Db.QueryRowContext(context.Background(), "SELECT current_catalog").Scan(&catalog)
+	err := c.Db.QueryRowContext(ctx, "SELECT current_catalog").Scan(&catalog)
 	if err != nil {
 		return "", c.ErrorHelper.WrapIO(err, "failed to get current catalog")
 	}
@@ -44,9 +44,9 @@ func (c *trinoConnectionImpl) GetCurrentCatalog() (string, error) {
 }
 
 // GetCurrentDbSchema implements driverbase.CurrentNamespacer.
-func (c *trinoConnectionImpl) GetCurrentDbSchema() (string, error) {
+func (c *trinoConnectionImpl) GetCurrentDbSchema(ctx context.Context) (string, error) {
 	var schema string
-	err := c.Db.QueryRowContext(context.Background(), "SELECT current_schema").Scan(&schema)
+	err := c.Db.QueryRowContext(ctx, "SELECT current_schema").Scan(&schema)
 	if err != nil {
 		return "", c.ErrorHelper.WrapIO(err, "failed to get current schema")
 	}
@@ -54,20 +54,20 @@ func (c *trinoConnectionImpl) GetCurrentDbSchema() (string, error) {
 }
 
 // SetCurrentCatalog implements driverbase.CurrentNamespacer.
-func (c *trinoConnectionImpl) SetCurrentCatalog(catalog string) error {
+func (c *trinoConnectionImpl) SetCurrentCatalog(ctx context.Context, catalog string) error {
 	if catalog == "" {
 		return nil // No-op for empty catalog
 	}
-	_, err := c.Db.ExecContext(context.Background(), "USE "+quoteIdentifier(catalog)+".information_schema")
+	_, err := c.Db.ExecContext(ctx, "USE "+quoteIdentifier(catalog)+".information_schema")
 	return err
 }
 
 // SetCurrentDbSchema implements driverbase.CurrentNamespacer.
-func (c *trinoConnectionImpl) SetCurrentDbSchema(schema string) error {
+func (c *trinoConnectionImpl) SetCurrentDbSchema(ctx context.Context, schema string) error {
 	if schema == "" {
 		return nil // No-op for empty schema
 	}
-	_, err := c.Db.ExecContext(context.Background(), "USE "+quoteIdentifier(schema))
+	_, err := c.Db.ExecContext(ctx, "USE "+quoteIdentifier(schema))
 	return err
 }
 
@@ -90,7 +90,7 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	if catalog != nil && *catalog != "" {
 		catalogName = *catalog
 	} else {
-		catalogName, err = c.GetCurrentCatalog()
+		catalogName, err = c.GetCurrentCatalog(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -100,7 +100,7 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	if dbSchema != nil && *dbSchema != "" {
 		schemaName = *dbSchema
 	} else {
-		schemaName, err = c.GetCurrentDbSchema()
+		schemaName, err = c.GetCurrentDbSchema(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -415,7 +415,10 @@ func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.
 		queryBuilder.WriteString(" ")
 
 		// Convert Arrow type to Trino type
-		trinoType := c.arrowToTrinoType(field)
+		trinoType, err := c.arrowToTrinoType(field)
+		if err != nil {
+			return c.ErrorHelper.WrapInternal(err, "convert Arrow type for column %s", field.Name)
+		}
 		queryBuilder.WriteString(trinoType)
 	}
 
@@ -433,9 +436,9 @@ func (c *trinoConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.Lo
 }
 
 // arrowToTrinoType converts Arrow data type to Trino column type
-func (c *trinoConnectionImpl) arrowToTrinoType(field arrow.Field) string {
+func (c *trinoConnectionImpl) arrowToTrinoType(field arrow.Field) (string, error) {
 	if extName, exists := field.Metadata.GetValue("ARROW:extension:name"); exists && extName == "arrow.uuid" {
-		return "UUID"
+		return "UUID", nil
 	}
 
 	var trinoType string
@@ -468,7 +471,6 @@ func (c *trinoConnectionImpl) arrowToTrinoType(field arrow.Field) string {
 	case *arrow.Date32Type:
 		trinoType = "DATE"
 	case *arrow.TimestampType:
-
 		// Determine precision based on Arrow timestamp unit
 		var precision string
 		switch arrowType.Unit {
@@ -481,41 +483,34 @@ func (c *trinoConnectionImpl) arrowToTrinoType(field arrow.Field) string {
 		case arrow.Nanosecond:
 			precision = "(9)"
 		default:
-			// should never happen, but panic here for defensive programming
-			panic(fmt.Sprintf("unexpected Arrow timestamp unit: %v", arrowType.Unit))
+			return "", fmt.Errorf("unsupported Arrow timestamp unit: %v", arrowType.Unit)
 		}
 
 		// Use TIMESTAMP for timezone-naive timestamps, TIMESTAMP WITH TIME ZONE for timezone-aware
 		if arrowType.TimeZone != "" {
-			// Timezone-aware (timestamptz) -> TIMESTAMP WITH TIME ZONE
 			trinoType = "TIMESTAMP" + precision + " WITH TIME ZONE"
 		} else {
-			// Timezone-naive (timestamp) -> TIMESTAMP
 			trinoType = "TIMESTAMP" + precision
 		}
 
 	case *arrow.Time32Type:
-		// Determine precision based on Arrow time unit
 		switch arrowType.Unit {
 		case arrow.Second:
 			trinoType = "TIME(0)"
 		case arrow.Millisecond:
 			trinoType = "TIME(3)"
 		default:
-			// should never happen, but panic here for defensive programming
-			panic(fmt.Sprintf("unexpected Time32 unit: %v", arrowType.Unit))
+			return "", fmt.Errorf("unsupported Arrow Time32 unit: %v", arrowType.Unit)
 		}
 
 	case *arrow.Time64Type:
-		// Determine precision based on Arrow time unit
 		switch arrowType.Unit {
 		case arrow.Microsecond:
 			trinoType = "TIME(6)"
 		case arrow.Nanosecond:
 			trinoType = "TIME(9)"
 		default:
-			// should never happen, but panic here for defensive programming
-			panic(fmt.Sprintf("unexpected Time64 unit: %v", arrowType.Unit))
+			return "", fmt.Errorf("unsupported Arrow Time64 unit: %v", arrowType.Unit)
 		}
 	case arrow.DecimalType:
 		trinoType = fmt.Sprintf("DECIMAL(%d,%d)", arrowType.GetPrecision(), arrowType.GetScale())
@@ -525,7 +520,7 @@ func (c *trinoConnectionImpl) arrowToTrinoType(field arrow.Field) string {
 	}
 
 	// Note: In Trino, columns are nullable by default, and assume that all columns are nullable since trino go client does not provide clean way to get nullability.
-	return trinoType
+	return trinoType, nil
 }
 
 // ListTableTypes implements driverbase.TableTypeLister interface

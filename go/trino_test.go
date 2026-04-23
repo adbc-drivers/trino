@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/adbc-drivers/driverbase-go/testutil"
+	"github.com/adbc-drivers/driverbase-go/driverbase"
 	"github.com/adbc-drivers/driverbase-go/validation"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -44,12 +45,12 @@ type TrinoQuirks struct {
 	mem *memory.CheckedAllocator
 }
 
-func (q *TrinoQuirks) SetupDriver(t *testing.T) adbc.Driver {
+func (q *TrinoQuirks) SetupDriver(t *testing.T) driverbase.DriverWithContext {
 	q.mem = memory.NewCheckedAllocator(memory.DefaultAllocator)
 	return trino.NewDriver(q.mem)
 }
 
-func (q *TrinoQuirks) TearDownDriver(t *testing.T, _ adbc.Driver) {
+func (q *TrinoQuirks) TearDownDriver(t *testing.T, _ driverbase.DriverWithContext) {
 	q.mem.AssertSize(t, 0)
 }
 
@@ -178,16 +179,16 @@ func (q *TrinoQuirks) CreateSampleTable(tableName string, r arrow.RecordBatch) e
 	return nil
 }
 
-func (q *TrinoQuirks) DropTable(cnxn adbc.Connection, tblName string) error {
-	stmt, err := cnxn.NewStatement()
+func (q *TrinoQuirks) DropTable(cnxn adbc.ConnectionWithContext, tblName string) error {
+	stmt, err := cnxn.NewStatement(context.Background())
 	if err != nil {
 		return err
 	}
 	defer func() {
-		err = errors.Join(err, stmt.Close())
+		err = errors.Join(err, stmt.Close(context.Background()))
 	}()
 
-	if err = stmt.SetSqlQuery("DROP TABLE IF EXISTS " + tblName); err != nil {
+	if err = stmt.SetSqlQuery(context.Background(), "DROP TABLE IF EXISTS "+tblName); err != nil {
 		return err
 	}
 
@@ -453,30 +454,30 @@ type TrinoTests struct {
 	Quirks *TrinoQuirks
 
 	ctx    context.Context
-	driver adbc.Driver
-	db     adbc.Database
-	cnxn   adbc.Connection
-	stmt   adbc.Statement
+	driver driverbase.DriverWithContext
+	db     adbc.DatabaseWithContext
+	cnxn   adbc.ConnectionWithContext
+	stmt   adbc.StatementWithContext
 }
 
 func (s *TrinoTests) SetupTest() {
 	var err error
 	s.ctx = context.Background()
 	s.driver = s.Quirks.SetupDriver(s.T())
-	s.db, err = s.driver.NewDatabase(s.Quirks.DatabaseOptions())
+	s.db, err = s.driver.NewDatabaseWithContext(s.ctx, s.Quirks.DatabaseOptions())
 	s.NoError(err)
 	s.cnxn, err = s.db.Open(s.ctx)
 	s.NoError(err)
-	s.stmt, err = s.cnxn.NewStatement()
+	s.stmt, err = s.cnxn.NewStatement(s.ctx)
 	s.NoError(err)
 }
 
 func (s *TrinoTests) TearDownTest() {
-	s.NoError(s.stmt.Close())
-	s.NoError(s.cnxn.Close())
+	s.NoError(s.stmt.Close(s.ctx))
+	s.NoError(s.cnxn.Close(s.ctx))
 	s.Quirks.TearDownDriver(s.T(), s.driver)
 	s.cnxn = nil
-	s.NoError(s.db.Close())
+	s.NoError(s.db.Close(s.ctx))
 	s.db = nil
 	s.driver = nil
 }
@@ -490,11 +491,11 @@ type selectCase struct {
 
 func (s *TrinoTests) TestSelect() {
 	// Drop table if it exists first, then create test table with basic Trino types
-	s.NoError(s.stmt.SetSqlQuery(`DROP TABLE IF EXISTS memory.default.test_types`))
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, `DROP TABLE IF EXISTS memory.default.test_types`))
 	_, err := s.stmt.ExecuteUpdate(s.ctx)
 	s.NoError(err)
 
-	s.NoError(s.stmt.SetSqlQuery(`
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, `
 		CREATE TABLE memory.default.test_types (
 			bool_col BOOLEAN,
 			tinyint_col TINYINT,
@@ -509,7 +510,7 @@ func (s *TrinoTests) TestSelect() {
 	s.NoError(err)
 
 	// Insert multiple rows including NULLs to test nullable behavior
-	s.NoError(s.stmt.SetSqlQuery(`
+	s.NoError(s.stmt.SetSqlQuery(s.ctx, `
 		INSERT INTO memory.default.test_types VALUES
 			(true, 42, 12345, 9876543210, 3.25, 6.75, 'hello world'),
 			(false, NULL, 54321, NULL, 1.5, NULL, NULL),
@@ -634,7 +635,7 @@ func (s *TrinoTests) TestSelect() {
 		},
 	} {
 		s.Run(testCase.name, func() {
-			s.NoError(s.stmt.SetSqlQuery(testCase.query))
+			s.NoError(s.stmt.SetSqlQuery(s.ctx, testCase.query))
 
 			rdr, rows, err := s.stmt.ExecuteQuery(s.ctx)
 			s.NoError(err)
@@ -666,10 +667,10 @@ type TrinoTestSuite struct {
 	dsn    string
 	mem    *memory.CheckedAllocator
 	ctx    context.Context
-	driver adbc.Driver
-	db     adbc.Database
-	cnxn   adbc.Connection
-	stmt   adbc.Statement
+	driver driverbase.DriverWithContext
+	db     adbc.DatabaseWithContext
+	cnxn   adbc.ConnectionWithContext
+	stmt   adbc.StatementWithContext
 }
 
 func (s *TrinoTestSuite) SetupSuite() {
@@ -683,7 +684,7 @@ func (s *TrinoTestSuite) SetupSuite() {
 	s.mem = memory.NewCheckedAllocator(memory.DefaultAllocator)
 
 	s.driver = trino.NewDriver(s.mem)
-	s.db, err = s.driver.NewDatabase(map[string]string{
+	s.db, err = s.driver.NewDatabaseWithContext(s.ctx, map[string]string{
 		adbc.OptionKeyURI: s.dsn,
 	})
 	s.NoError(err)
@@ -691,19 +692,19 @@ func (s *TrinoTestSuite) SetupSuite() {
 	s.cnxn, err = s.db.Open(s.ctx)
 	s.NoError(err)
 
-	s.stmt, err = s.cnxn.NewStatement()
+	s.stmt, err = s.cnxn.NewStatement(s.ctx)
 	s.NoError(err)
 }
 
 func (s *TrinoTestSuite) TearDownSuite() {
 	if s.stmt != nil {
-		s.NoError(s.stmt.Close())
+		s.NoError(s.stmt.Close(s.ctx))
 	}
 	if s.cnxn != nil {
-		s.NoError(s.cnxn.Close())
+		s.NoError(s.cnxn.Close(s.ctx))
 	}
 	if s.db != nil {
-		s.NoError(s.db.Close())
+		s.NoError(s.db.Close(s.ctx))
 	}
 	s.mem.AssertSize(s.T(), 0)
 }

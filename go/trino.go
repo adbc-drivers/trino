@@ -548,7 +548,7 @@ func (f *trinoConnectionFactory) CreateConnection(
 }
 
 // NewDriver constructs the ADBC Driver for "trino".
-func NewDriver(alloc memory.Allocator) adbc.Driver {
+func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
 	vendorName := "Trino"
 	typeConverter := &trinoTypeConverter{
 		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: vendorName},
