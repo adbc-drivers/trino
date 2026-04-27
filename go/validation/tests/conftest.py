@@ -16,17 +16,24 @@ import sys
 from pathlib import Path
 
 import adbc_drivers_validation.model
+import adbc_drivers_validation.tests.conftest
 import pytest
 from adbc_drivers_validation.tests.conftest import (  # noqa: F401
     conn,
     conn_factory,
     manual_test,
     noci,
-    pytest_addoption,
     pytest_collection_modifyitems,
 )
 
 from .trino import TrinoQuirks
+
+
+def pytest_addoption(parser):
+    # while we're adding this for consistency with other drivers, it won't
+    # have any effect as we're set up only to test the latest version
+    adbc_drivers_validation.tests.conftest.pytest_addoption(parser)
+    parser.addoption("--vendor-version", action="store", default="latest")
 
 
 @pytest.fixture(scope="session")
