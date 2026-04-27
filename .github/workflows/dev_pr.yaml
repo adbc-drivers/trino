@@ -18,10 +18,11 @@
 name: Dev PR
 
 on:
-  pull_request_target:
+  pull_request:
     types:
       - opened
       - edited
+      - reopened
       - synchronize
       - ready_for_review
       - review_requested

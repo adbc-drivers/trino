@@ -67,3 +67,8 @@ jobs:
       - name: pre-commit
         run: |
           pre-commit run --all-files --color=always --show-diff-on-failure --verbose
+
+      - name: Analyze workflows with zizmor
+        uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e # v0.5.3
+        with:
+          advanced-security: false

@@ -39,6 +39,9 @@ defaults:
   run:
     shell: bash
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: "Test/${{ matrix.platform }}_${{ matrix.arch }}"
@@ -68,6 +71,7 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
         with:
+          cache: false
           cache-dependency-path: go/go.sum
           check-latest: true
           go-version-file: go/go.mod
@@ -143,14 +147,14 @@ jobs:
           go mod tidy --diff
 
   validate:
-    name: "Validate/${{ matrix.platform }}_${{ matrix.arch }}"
+    name: "Validate trino ${{ matrix.vendor_version }}/${{ matrix.platform }}_${{ matrix.arch }}"
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
       matrix:
         include:
           # I think we only need to test one platform, but we can change that later
-          - { platform: linux, arch: amd64, runner: ubuntu-latest }
+          - { platform: linux, arch: amd64, runner: ubuntu-latest, service_name: "test-service", vendor_version: "latest" }
     permissions:
       contents: read
     steps:
@@ -169,6 +173,7 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
         with:
+          cache: false
           cache-dependency-path: go/go.sum
           check-latest: true
           go-version-file: go/go.mod
@@ -184,7 +189,7 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
       - name: Build Library
         working-directory: go
@@ -209,10 +214,10 @@ jobs:
         working-directory: go
         run: |
           if [[ -f compose.yaml ]]; then
-            if ! docker compose up --detach --wait test-service; then
+            if ! docker compose up --detach --wait ${{ matrix.service_name }}; then
               echo "Service failed to start"
               echo "Logs:"
-              docker compose logs test-service
+              docker compose logs ${{ matrix.service_name }}
               exit 1
             fi
           fi
@@ -235,20 +240,26 @@ jobs:
 
           if [[ -f ci/scripts/pre-test.sh ]]; then
             echo "Loading pre-test"
-            ./ci/scripts/pre-test.sh ${{ matrix.platform }} ${{ matrix.arch }}
+            ./ci/scripts/pre-test.sh ${{ matrix.platform }} ${{ matrix.arch }} ${{ matrix.service_name }}
           fi
 
           docker ps
-          pixi run validate
+          if [[ -n "${{ matrix.vendor_version }}" ]]; then
+            pixi run validate --vendor-version "${{ matrix.vendor_version }}"
+          else
+            pixi run validate
+          fi
 
           if [[ -f ci/scripts/post-test.sh ]]; then
             ./ci/scripts/post-test.sh
           fi
 
+          cp validation-report.xml validation-report-${{ matrix.vendor_version }}.xml
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: validation-report
-          path: "go/validation-report.xml"
+          name: validation-report-${{ matrix.vendor_version }}
+          path: "go/validation-report-${{ matrix.vendor_version }}.xml"
           retention-days: 7
 
       - name: Generate docs
@@ -260,7 +271,7 @@ jobs:
         with:
           name: docs
           path: "go/generated/trino.md"
-          retention-days: 2
+          retention-days: 7
 
   build:
     name: "Build trino/${{ matrix.platform }}_${{ matrix.arch }}"
@@ -287,6 +298,7 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
         with:
+          cache: false
           cache-dependency-path: go/go.sum
           check-latest: true
           go-version-file: go/go.mod
@@ -306,7 +318,7 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
       - name: Build Library
         working-directory: go
@@ -334,7 +346,9 @@ jobs:
   package:
     name: "Generate Packages"
     runs-on: ubuntu-latest
-    needs: build
+    needs:
+      - build
+      - validate
     permissions:
       contents: read
 
@@ -347,6 +361,7 @@ jobs:
 
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
         with:
+          cache: false
           check-latest: true
           go-version: "stable"
 
@@ -363,18 +378,11 @@ jobs:
       - name: Install tools
         working-directory: go
         run: |
+          # XXX: Google has effectively abandoned go-licenses, and it broke
           # XXX: can't install go-licenses under go 1.25
+          # Use our fork instead
           # https://github.com/google/go-licenses/issues/312
-          git clone --depth=1 https://github.com/google/go-licenses
-          git config --global --add 'url.https://github.com/.insteadOf' ssh://git@github.com/
-          pushd go-licenses
-          go get -u
-          # Silent break: https://github.com/spf13/cobra/pull/2303
-          # Manually edit the go.mod to get around this for now
-          sed -i 's|github.com/spf13/pflag v1.0.8|github.com/spf13/pflag v1.0.7|g' go.mod
-          go mod tidy
-          go install .
-          popd
+          go install github.com/lidavidm/go-licenses@master
 
       - name: Generate packages
         working-directory: go
@@ -397,6 +405,26 @@ jobs:
           path: ~/packages
           retention-days: 7
 
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: "validation-report-*"
+          path: "~/validation-report"
+
+      - name: Generate combined docs
+        working-directory: go
+        run: |
+          ls -laR ~/validation-report
+          find ~/validation-report -type f -name '*.xml'
+          cp $(find ~/validation-report -type f -name '*.xml') .
+          ls *.xml
+          pixi run gendocs --output generated
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: docs-${{ matrix.vendor_version }}
+          path: "go/generated/trino.md"
+          retention-days: 2
+
   test-packages:
     name: "Test Packages/${{ matrix.platform }}_${{ matrix.arch }}"
     runs-on: ${{ matrix.runner }}
@@ -413,6 +441,7 @@ jobs:
       # for now, install dbc from main
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
         with:
+          cache: false
           go-version: 'stable'
       - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
         with:
@@ -496,8 +525,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         working-directory: go
         run: |
-          ref=${{ github.ref }}
-          tag=${ref#"refs/tags/"}
+          tag="${GITHUB_REF_NAME}"
           pixi run release $(pwd) $tag
           gh release upload $tag $(find ~/packages -name '*.tar.gz') $(find ~/packages -name 'manifest.yaml') $(find ~/packages -name '*.md')
 
