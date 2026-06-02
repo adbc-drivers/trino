@@ -517,22 +517,6 @@ func convertDecimalToTrinoNumericFromInt(value *big.Int, scale int32) trino.Nume
 	return trino.Numeric(rat.FloatString(int(scale)))
 }
 
-// trinoConnectionImpl extends sqlwrapper connection with DbObjectsEnumerator
-type trinoConnectionImpl struct {
-	*sqlwrapper.ConnectionImplBase // Embed sqlwrapper connection for all standard functionality
-
-	version string
-}
-
-// implements BulkIngester interface
-var _ sqlwrapper.BulkIngester = (*trinoConnectionImpl)(nil)
-
-// implements DbObjectsEnumerator interface
-var _ driverbase.DbObjectsEnumerator = (*trinoConnectionImpl)(nil)
-
-// implements CurrentNameSpacer interface
-var _ driverbase.CurrentNamespacer = (*trinoConnectionImpl)(nil)
-
 // trinoConnectionFactory creates Trino connections
 type trinoConnectionFactory struct{}
 
@@ -547,6 +531,12 @@ func (f *trinoConnectionFactory) CreateConnection(
 	}, nil
 }
 
+func (f *trinoConnectionFactory) CreateStatement(stmt *sqlwrapper.StatementImplBase) (sqlwrapper.StatementImpl, error) {
+	return &trinoStatement{
+		StatementImplBase: stmt,
+	}, nil
+}
+
 // NewDriver constructs the ADBC Driver for "trino".
 func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
 	vendorName := "Trino"
@@ -554,8 +544,10 @@ func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
 		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: vendorName},
 	}
 
+	factory := &trinoConnectionFactory{}
 	driver := sqlwrapper.NewDriver(alloc, "trino", vendorName, NewTrinoDBFactory(), typeConverter).
-		WithConnectionFactory(&trinoConnectionFactory{}).
+		WithConnectionFactory(factory).
+		WithStatementFactory(factory).
 		WithErrorInspector(TrinoErrorInspector{})
 	driver.DriverInfo.MustRegister(map[adbc.InfoCode]any{
 		adbc.InfoDriverName:      "ADBC Driver Foundry Driver for Trino",

@@ -33,6 +33,22 @@ const (
 	TrinoMaxQuerySizeBytes = 1_000_000
 )
 
+// trinoConnectionImpl extends sqlwrapper connection with DbObjectsEnumerator
+type trinoConnectionImpl struct {
+	*sqlwrapper.ConnectionImplBase // Embed sqlwrapper connection for all standard functionality
+
+	version string
+}
+
+// implements BulkIngester interface
+var _ sqlwrapper.BulkIngester = (*trinoConnectionImpl)(nil)
+
+// implements DbObjectsEnumerator interface
+var _ driverbase.DbObjectsEnumerator = (*trinoConnectionImpl)(nil)
+
+// implements CurrentNameSpacer interface
+var _ driverbase.CurrentNamespacer = (*trinoConnectionImpl)(nil)
+
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) GetCurrentCatalog(ctx context.Context) (string, error) {
 	var catalog string
@@ -186,15 +202,18 @@ func (c *trinoConnectionImpl) GetPlaceholder(field *arrow.Field, index int) stri
 var _ sqlwrapper.BulkIngester = (*trinoConnectionImpl)(nil)
 
 // ExecuteBulkIngest performs Trino bulk ingest using batched INSERT statements.
-func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
+func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwrapper.StatementImpl, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
+	// inject the query ID capture through everything
+	params := stmt.(*trinoStatement).GetAdditionalExecParams()
+
 	schema := stream.Schema()
-	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options); err != nil {
+	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options, params); err != nil {
 		return -1, c.ErrorHelper.WrapIO(err, "failed to create table")
 	}
 
 	if options.IngestBatchSize > 0 {
 		return sqlwrapper.ExecuteBatchedBulkIngest(
-			ctx, conn, options, stream,
+			ctx, stmt, conn, options, stream,
 			c.TypeConverter, c, &c.Base().ErrorHelper,
 		)
 	}
@@ -204,7 +223,7 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, conn *sqlwr
 	}
 
 	// Use Trino-specific batching with accurate serialized size measurement
-	return c.executeDynamicBatchedIngest(ctx, conn, options, stream)
+	return c.executeDynamicBatchedIngest(ctx, conn, options, stream, params)
 }
 
 // executeDynamicBatchedIngest performs batched INSERT with incremental query building.
@@ -220,6 +239,7 @@ func (c *trinoConnectionImpl) executeDynamicBatchedIngest(
 	conn *sqlwrapper.LoggingConn,
 	options *driverbase.BulkIngestOptions,
 	stream array.RecordReader,
+	params []any,
 ) (int64, error) {
 	var totalRowsInserted int64
 	schema := stream.Schema()
@@ -269,7 +289,7 @@ func (c *trinoConnectionImpl) executeDynamicBatchedIngest(
 
 			if queryBuilder.Len()+additionalLength > options.MaxQuerySizeBytes && currentBatchRows > 0 {
 				// Execute current batch
-				rowsInserted, err := c.executeBatch(ctx, conn, queryBuilder.String())
+				rowsInserted, err := c.executeBatch(ctx, conn, queryBuilder.String(), params)
 				if err != nil {
 					return totalRowsInserted, c.ErrorHelper.WrapIO(err,
 						"failed to insert batch at rows %d-%d", startRowIdx, startRowIdx+currentBatchRows-1)
@@ -294,7 +314,7 @@ func (c *trinoConnectionImpl) executeDynamicBatchedIngest(
 
 		// Execute final batch for this record batch
 		if currentBatchRows > 0 {
-			rowsInserted, err := c.executeBatch(ctx, conn, queryBuilder.String())
+			rowsInserted, err := c.executeBatch(ctx, conn, queryBuilder.String(), params)
 			if err != nil {
 				return totalRowsInserted, c.ErrorHelper.WrapIO(err,
 					"failed to insert final batch at rows %d-%d", startRowIdx, startRowIdx+currentBatchRows-1)
@@ -355,12 +375,13 @@ func (c *trinoConnectionImpl) executeBatch(
 	ctx context.Context,
 	conn *sqlwrapper.LoggingConn,
 	querySQL string,
+	params []any,
 ) (int64, error) {
 	if querySQL == "" {
 		return 0, nil
 	}
 
-	result, err := conn.ExecContext(ctx, querySQL)
+	result, err := conn.ExecContext(ctx, querySQL, params...)
 	if err != nil {
 		return 0, err
 	}
@@ -374,20 +395,20 @@ func (c *trinoConnectionImpl) executeBatch(
 }
 
 // createTableIfNeeded creates the table based on the ingest mode
-func (c *trinoConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions) error {
+func (c *trinoConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions, params []any) error {
 	switch options.Mode {
 	case adbc.OptionValueIngestModeCreate:
 		// Create the table (fail if exists)
-		return c.createTable(ctx, conn, tableName, schema, false)
+		return c.createTable(ctx, conn, tableName, schema, false, params)
 	case adbc.OptionValueIngestModeCreateAppend:
 		// Create the table if it doesn't exist
-		return c.createTable(ctx, conn, tableName, schema, true)
+		return c.createTable(ctx, conn, tableName, schema, true, params)
 	case adbc.OptionValueIngestModeReplace:
 		// Drop and recreate the table
-		if err := c.dropTable(ctx, conn, tableName); err != nil {
+		if err := c.dropTable(ctx, conn, tableName, params); err != nil {
 			return err
 		}
-		return c.createTable(ctx, conn, tableName, schema, false)
+		return c.createTable(ctx, conn, tableName, schema, false, params)
 	case adbc.OptionValueIngestModeAppend:
 		// Table should already exist, do nothing
 		return nil
@@ -397,7 +418,7 @@ func (c *trinoConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 }
 
 // createTable creates a Trino table from Arrow schema
-func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, ifNotExists bool) error {
+func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, ifNotExists bool, params []any) error {
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("CREATE TABLE ")
 	if ifNotExists {
@@ -424,14 +445,14 @@ func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.
 
 	queryBuilder.WriteString(")")
 
-	_, err := conn.ExecContext(ctx, queryBuilder.String())
+	_, err := conn.ExecContext(ctx, queryBuilder.String(), params...)
 	return err
 }
 
 // dropTable drops a Trino table
-func (c *trinoConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string) error {
+func (c *trinoConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, params []any) error {
 	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", quoteIdentifier(tableName))
-	_, err := conn.ExecContext(ctx, dropSQL)
+	_, err := conn.ExecContext(ctx, dropSQL, params...)
 	return err
 }
 

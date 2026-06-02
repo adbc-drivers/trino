@@ -248,22 +248,22 @@ func initLoggingFromEnv(db adbc.DatabaseLogging) {
 	db.SetLogger(logger)
 }
 
-// Allocate a new cgo.Handle and store its address in a heap-allocated
-// uintptr_t.  Experimentally, this was found to be necessary, else
-// something (the Go runtime?) would corrupt (garbage-collect?) the
-// handle.
+// cgo.Handle is a uintptr integer (not a pointer). Packing it directly into
+// a void* field is safe: the CGO checker only rejects Go heap pointers, and
+// handle values (small non-zero integers from a global counter) never alias
+// Go-allocated memory. The GC does not scan C-managed memory, so it will
+// never misinterpret the stored integer as a live pointer. No C allocation
+// is needed — the handle value itself fits in the pointer-sized field.
 func createHandle(hndl cgo.Handle) unsafe.Pointer {
-	// uintptr_t* hptr = malloc(sizeof(uintptr_t));
-	hptr := (*C.uintptr_t)(C.calloc(C.sizeof_uintptr_t, C.size_t(1)))
-	// *hptr = (uintptr)hndl;
-	*hptr = C.uintptr_t(uintptr(hndl))
-	return unsafe.Pointer(hptr)
+	return unsafe.Pointer(uintptr(hndl))
+}
+
+func handleFromPtr(ptr unsafe.Pointer) cgo.Handle {
+	return cgo.Handle(uintptr(ptr))
 }
 
 func getFromHandle[T any](ptr unsafe.Pointer) *T {
-	// uintptr_t* hptr = (uintptr_t*)ptr;
-	hptr := (*C.uintptr_t)(ptr)
-	return cgo.Handle((uintptr)(*hptr)).Value().(*T)
+	return handleFromPtr(ptr).Value().(*T)
 }
 
 func exportStringOption(val string, out *C.char, length *C.size_t) C.AdbcStatusCode {
@@ -271,7 +271,7 @@ func exportStringOption(val string, out *C.char, length *C.size_t) C.AdbcStatusC
 	if lenWithTerminator <= *length {
 		sink := fromCArr[byte]((*byte)(unsafe.Pointer(out)), int(*length))
 		copy(sink, val)
-		sink[lenWithTerminator] = 0
+		sink[len(val)] = 0
 	}
 	*length = lenWithTerminator
 	return C.ADBC_STATUS_OK
@@ -435,17 +435,16 @@ func TrinoArrayStreamRelease(stream *C.struct_ArrowArrayStream) {
 	if stream == nil || stream.release != (*[0]byte)(C.TrinoArrayStreamRelease) || stream.private_data == nil {
 		return
 	}
-	h := (*(*cgo.Handle)(stream.private_data))
+	h := handleFromPtr(stream.private_data)
+	stream.private_data = nil
 
 	cStream := h.Value().(*cArrayStream)
+	h.Delete()
 	cStream.rdr.Release()
 	if cStream.adbcErr != nil {
 		C.TrinoerrRelease(cStream.adbcErr)
 		C.free(unsafe.Pointer(cStream.adbcErr))
 	}
-	C.free(unsafe.Pointer(stream.private_data))
-	stream.private_data = nil
-	h.Delete()
 	runtime.GC()
 }
 
@@ -472,10 +471,17 @@ func exportRecordReader(rdr array.RecordReader, stream *C.struct_ArrowArrayStrea
 	rdr.Retain()
 }
 
+type unappliedOpt struct {
+	stringVal *string
+	int64Val  *int64
+	byteVal   []byte
+	doubleVal *float64
+}
+
 type cDatabase struct {
 	cancellableContext
 
-	opts map[string]string
+	opts map[string]unappliedOpt
 	db   driverbase.Database
 }
 
@@ -580,12 +586,35 @@ func TrinoDatabaseInit(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code
 		return C.ADBC_STATUS_INVALID_STATE
 	}
 
-	adb, aerr := drv.NewDatabaseWithContext(cdb.newContext(), cdb.opts)
+	stringOpts := map[string]string{}
+	for k, v := range cdb.opts {
+		if v.stringVal != nil {
+			stringOpts[k] = *v.stringVal
+		}
+	}
+	ctx := cdb.newContext()
+	adb, aerr := drv.NewDatabaseWithContext(ctx, stringOpts)
 	if aerr != nil {
 		return C.AdbcStatusCode(errToAdbcErr(err, aerr))
 	}
 
 	cdb.db = adb.(driverbase.Database)
+	for k, v := range cdb.opts {
+		switch {
+		case v.stringVal != nil:
+			continue
+		case v.int64Val != nil:
+			aerr = cdb.db.SetOptionInt(ctx, k, *v.int64Val)
+		case v.byteVal != nil:
+			aerr = cdb.db.SetOptionBytes(ctx, k, v.byteVal)
+		case v.doubleVal != nil:
+			aerr = cdb.db.SetOptionDouble(ctx, k, *v.doubleVal)
+		}
+		if aerr != nil {
+			return C.AdbcStatusCode(errToAdbcErr(err, aerr))
+		}
+	}
+
 	initLoggingFromEnv(cdb.db)
 	return C.ADBC_STATUS_OK
 }
@@ -605,7 +634,7 @@ func TrinoDatabaseNew(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (code 
 		setErr(err, "AdbcDatabaseNew: database already allocated")
 		return C.ADBC_STATUS_INVALID_STATE
 	}
-	dbobj := &cDatabase{opts: make(map[string]string)}
+	dbobj := &cDatabase{opts: make(map[string]unappliedOpt)}
 	hndl := cgo.NewHandle(dbobj)
 	db.private_data = createHandle(hndl)
 	return C.ADBC_STATUS_OK
@@ -621,19 +650,17 @@ func TrinoDatabaseRelease(db *C.struct_AdbcDatabase, err *C.struct_AdbcError) (c
 	if !checkDBAlloc(db, err, "AdbcDatabaseRelease") {
 		return C.ADBC_STATUS_INVALID_STATE
 	}
-	h := (*(*cgo.Handle)(db.private_data))
+	h := handleFromPtr(db.private_data)
+	db.private_data = nil
 
 	cdb := h.Value().(*cDatabase)
+	h.Delete()
 	if cdb.db != nil {
 		cdb.db.Close(cdb.newContext())
 		cdb.db = nil
 	}
 	cdb.opts = nil
-	if db.private_data != nil {
-		C.free(unsafe.Pointer(db.private_data))
-		db.private_data = nil
-	}
-	h.Delete()
+
 	// manually trigger GC for two reasons:
 	//  1. ASAN expects the release callback to be called before
 	//     the process ends, but GC is not deterministic. So by manually
@@ -661,7 +688,7 @@ func TrinoDatabaseSetOption(db *C.struct_AdbcDatabase, key, value *C.cchar_t, er
 		e := cdb.db.SetOption(cdb.newContext(), k, v)
 		return C.AdbcStatusCode(errToAdbcErr(err, e))
 	} else {
-		cdb.opts[k] = v
+		cdb.opts[k] = unappliedOpt{stringVal: new(v)}
 	}
 
 	return C.ADBC_STATUS_OK
@@ -674,13 +701,19 @@ func TrinoDatabaseSetOptionBytes(db *C.struct_AdbcDatabase, key *C.cchar_t, valu
 			code = poison(err, "AdbcDatabaseSetOptionBytes", e)
 		}
 	}()
-	cdb := checkDBInit(db, err, "AdbcDatabaseSetOptionBytes")
-	if cdb == nil {
+	if !checkDBAlloc(db, err, "AdbcDatabaseSetOptionBytes") {
 		return C.ADBC_STATUS_INVALID_STATE
 	}
+	cdb := getFromHandle[cDatabase](db.private_data)
+	k := C.GoString(key)
+	v := fromCArr[byte](value, int(length))
 
-	e := cdb.db.SetOptionBytes(cdb.newContext(), C.GoString(key), fromCArr[byte](value, int(length)))
-	return C.AdbcStatusCode(errToAdbcErr(err, e))
+	if cdb.db != nil {
+		e := cdb.db.SetOptionBytes(cdb.newContext(), k, v)
+		return C.AdbcStatusCode(errToAdbcErr(err, e))
+	}
+	cdb.opts[k] = unappliedOpt{byteVal: v}
+	return C.ADBC_STATUS_OK
 }
 
 //export TrinoDatabaseSetOptionDouble
@@ -690,13 +723,19 @@ func TrinoDatabaseSetOptionDouble(db *C.struct_AdbcDatabase, key *C.cchar_t, val
 			code = poison(err, "AdbcDatabaseSetOptionDouble", e)
 		}
 	}()
-	cdb := checkDBInit(db, err, "AdbcDatabaseSetOptionDouble")
-	if cdb == nil {
+	if !checkDBAlloc(db, err, "AdbcDatabaseSetOptionDouble") {
 		return C.ADBC_STATUS_INVALID_STATE
 	}
+	cdb := getFromHandle[cDatabase](db.private_data)
+	k := C.GoString(key)
+	v := float64(value)
 
-	e := cdb.db.SetOptionDouble(cdb.newContext(), C.GoString(key), float64(value))
-	return C.AdbcStatusCode(errToAdbcErr(err, e))
+	if cdb.db != nil {
+		e := cdb.db.SetOptionDouble(cdb.newContext(), k, v)
+		return C.AdbcStatusCode(errToAdbcErr(err, e))
+	}
+	cdb.opts[k] = unappliedOpt{doubleVal: new(v)}
+	return C.ADBC_STATUS_OK
 }
 
 //export TrinoDatabaseSetOptionInt
@@ -706,13 +745,19 @@ func TrinoDatabaseSetOptionInt(db *C.struct_AdbcDatabase, key *C.cchar_t, value 
 			code = poison(err, "AdbcDatabaseSetOptionInt", e)
 		}
 	}()
-	cdb := checkDBInit(db, err, "AdbcDatabaseSetOptionInt")
-	if cdb == nil {
+	if !checkDBAlloc(db, err, "AdbcDatabaseSetOptionInt") {
 		return C.ADBC_STATUS_INVALID_STATE
 	}
+	cdb := getFromHandle[cDatabase](db.private_data)
+	k := C.GoString(key)
+	v := int64(value)
 
-	e := cdb.db.SetOptionInt(cdb.newContext(), C.GoString(key), int64(value))
-	return C.AdbcStatusCode(errToAdbcErr(err, e))
+	if cdb.db != nil {
+		e := cdb.db.SetOptionInt(cdb.newContext(), k, v)
+		return C.AdbcStatusCode(errToAdbcErr(err, e))
+	}
+	cdb.opts[k] = unappliedOpt{int64Val: new(v)}
+	return C.ADBC_STATUS_OK
 }
 
 type cConn struct {
@@ -969,15 +1014,15 @@ func TrinoConnectionRelease(cnxn *C.struct_AdbcConnection, err *C.struct_AdbcErr
 	if !checkConnAlloc(cnxn, err, "AdbcConnectionRelease") {
 		return C.ADBC_STATUS_INVALID_STATE
 	}
-	h := (*(*cgo.Handle)(cnxn.private_data))
+	h := handleFromPtr(cnxn.private_data)
+	cnxn.private_data = nil
 
 	conn := h.Value().(*cConn)
+	h.Delete()
 	defer func() {
 		conn.cancelContext()
 		conn.cnxn = nil
-		C.free(cnxn.private_data)
-		cnxn.private_data = nil
-		h.Delete()
+
 		// manually trigger GC for two reasons:
 		//  1. ASAN expects the release callback to be called before
 		//     the process ends, but GC is not deterministic. So by manually
@@ -1418,15 +1463,14 @@ func TrinoStatementRelease(stmt *C.struct_AdbcStatement, err *C.struct_AdbcError
 	if !checkStmtAlloc(stmt, err, "AdbcStatementRelease") {
 		return C.ADBC_STATUS_INVALID_STATE
 	}
-	h := (*(*cgo.Handle)(stmt.private_data))
+	h := handleFromPtr(stmt.private_data)
+	stmt.private_data = nil
 
 	st := h.Value().(*cStmt)
+	h.Delete()
 	defer func() {
 		st.cancelContext()
 		st.stmt = nil
-		C.free(stmt.private_data)
-		stmt.private_data = nil
-		h.Delete()
 		// manually trigger GC for two reasons:
 		//  1. ASAN expects the release callback to be called before
 		//     the process ends, but GC is not deterministic. So by manually

@@ -489,6 +489,24 @@ type selectCase struct {
 	expected string
 }
 
+func (s *TrinoTests) TestIngestQueryId() {
+	schema := arrow.NewSchema([]arrow.Field{
+		{
+			Name:     "ints",
+			Type:     arrow.PrimitiveTypes.Int64,
+			Nullable: true,
+		},
+	}, nil)
+	batch := testutil.RecordFromJSON(s.T(), s.Quirks.Alloc(), schema, `[{"ints": 1}, {"ints": 2}, {"ints": 3}]`)
+	defer batch.Release()
+	s.Require().NoError(s.stmt.Bind(s.ctx, batch))
+	s.Require().NoError(s.stmt.SetOption(s.ctx, adbc.OptionKeyIngestTargetTable, "foobar"))
+	s.Require().NoError(s.stmt.SetOption(s.ctx, adbc.OptionKeyIngestMode, adbc.OptionValueIngestModeReplace))
+
+	_, err := s.stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+}
+
 func (s *TrinoTests) TestSelect() {
 	// Drop table if it exists first, then create test table with basic Trino types
 	s.NoError(s.stmt.SetSqlQuery(s.ctx, `DROP TABLE IF EXISTS memory.default.test_types`))
