@@ -6,10 +6,10 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 h1:TngWCqHvy9oXAN6lEVMRuU21PR1EtLVZJmdB18Gu3Rw=
 github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5/go.mod h1:lmUJ/7eu/Q8D7ML55dXQrVaamCz2vxCfdQBasLZfHKk=
-github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260608005845-f218ccb883e8 h1:BG9ZygPtzRQWGUpdzu38ITrk669ao13EN797NQSij2E=
-github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260608005845-f218ccb883e8/go.mod h1:rCDugBvob6aEFZu7zJ9SqPSyyys6ipNWcsfvzF/Ns74=
-github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260608005845-f218ccb883e8 h1:+EZnfQX2uHe+s/tlQfcS0rXx1y6dTQKg0A1EqL3RNko=
-github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260608005845-f218ccb883e8/go.mod h1:H5NH2RgPyzQjwJFA7wYNbJNdxQXQcBcpN3+xQkTgP2s=
+github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260608064711-7f3f9a9f3990 h1:b8vaQHcgHqmalpmIqqPF+bVWrMQISUUjxwFfRbT0uy0=
+github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260608064711-7f3f9a9f3990/go.mod h1:rCDugBvob6aEFZu7zJ9SqPSyyys6ipNWcsfvzF/Ns74=
+github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260608064711-7f3f9a9f3990 h1:0Ar5GwlpNLPEjBHWrYOZSG91u8gC0xetdsh7REjgpDY=
+github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260608064711-7f3f9a9f3990/go.mod h1:H5NH2RgPyzQjwJFA7wYNbJNdxQXQcBcpN3+xQkTgP2s=
 github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20260423045143-148150eea03b h1:lCFRgYUVoy3cFTnUoKi/px3ZiV2cmIHujy3OVEm93P4=
 github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20260423045143-148150eea03b/go.mod h1:uKkYVA+iUXij7mPFproEi6sOIWFVNOT87UcqucqqnBg=
 github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260423045143-148150eea03b h1:hvd/bQfV1cdkYN0wAgDZVNC9Bwuq4IGVHLpG5gFBWU8=

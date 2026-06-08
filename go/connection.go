@@ -188,9 +188,9 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 	return arrow.NewSchema(fields, nil), nil
 }
 
-// QuoteIdentifier implements BulkIngester
-func (c *trinoConnectionImpl) QuoteIdentifier(name string) string {
-	return quoteIdentifier(name)
+// QuoteIdentifiers implements BulkIngester
+func (c *trinoConnectionImpl) QuoteIdentifiers(parts []string) string {
+	return quoteIdentifiers(parts)
 }
 
 // GetPlaceholder implements BulkIngester
@@ -562,16 +562,26 @@ func quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
+// quoteIdentifiers quotes each identifier part and joins them with "." into a single
+// qualified name such as "catalog"."schema"."table".
+func quoteIdentifiers(parts []string) string {
+	quoted := make([]string, len(parts))
+	for i, p := range parts {
+		quoted[i] = quoteIdentifier(p)
+	}
+	return strings.Join(quoted, ".")
+}
+
 // qualifiedTableName builds a quoted, optionally catalog/schema-qualified
 // table identifier such as "catalog"."schema"."table".
 func qualifiedTableName(catalog, schema, table string) string {
 	parts := make([]string, 0, 3)
 	if catalog != "" {
-		parts = append(parts, quoteIdentifier(catalog))
+		parts = append(parts, catalog)
 	}
 	if schema != "" {
-		parts = append(parts, quoteIdentifier(schema))
+		parts = append(parts, schema)
 	}
-	parts = append(parts, quoteIdentifier(table))
-	return strings.Join(parts, ".")
+	parts = append(parts, table)
+	return quoteIdentifiers(parts)
 }

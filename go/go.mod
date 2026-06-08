@@ -17,8 +17,8 @@ module github.com/adbc-drivers/trino
 go 1.26.0
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260608005845-f218ccb883e8
-	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260608005845-f218ccb883e8
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260608064711-7f3f9a9f3990
+	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260608064711-7f3f9a9f3990
 	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20260423045143-148150eea03b
 	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260423045143-148150eea03b
 	github.com/apache/arrow-adbc/go/adbc v1.11.0
