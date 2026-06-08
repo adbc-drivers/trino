@@ -30,8 +30,7 @@ func (t TrinoErrorInspector) InspectError(err error, defaultStatus adbc.Status) 
 	var vendorCode int32
 	var sqlState [5]byte
 
-	var trinoErr *trino.ErrTrino
-	if errors.As(err, &trinoErr) {
+	if trinoErr, ok := errors.AsType[*trino.ErrTrino](err); ok {
 		vendorCode = int32(trinoErr.ErrorCode)
 		if len(trinoErr.SqlState) >= 5 {
 			copy(sqlState[:], trinoErr.SqlState[0:5])
@@ -42,11 +41,9 @@ func (t TrinoErrorInspector) InspectError(err error, defaultStatus adbc.Status) 
 			// User errors include syntax errors, invalid arguments, etc.
 			// Check error name for more specific mapping
 			switch trinoErr.ErrorName {
-			case "SYNTAX_ERROR", "INVALID_COLUMN_REFERENCE", "COLUMN_NOT_FOUND",
-				"TABLE_NOT_FOUND", "SCHEMA_NOT_FOUND", "FUNCTION_NOT_FOUND",
-				"MISSING_COLUMN_NAME", "DUPLICATE_COLUMN_NAME":
+			case "SYNTAX_ERROR", "INVALID_COLUMN_REFERENCE", "MISSING_COLUMN_NAME", "DUPLICATE_COLUMN_NAME":
 				status = adbc.StatusInvalidArgument
-			case "NOT_FOUND":
+			case "NOT_FOUND", "COLUMN_NOT_FOUND", "TABLE_NOT_FOUND", "SCHEMA_NOT_FOUND", "FUNCTION_NOT_FOUND":
 				status = adbc.StatusNotFound
 			case "ALREADY_EXISTS":
 				status = adbc.StatusAlreadyExists
