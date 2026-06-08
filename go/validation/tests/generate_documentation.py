@@ -29,8 +29,12 @@ if __name__ == "__main__":
 
     reports = [report.resolve() for report in Path(".").glob("validation-report*.xml")]
     generate_documentation.generate(
+        "trino",
         # Not fully set up to test multiple versions currently
-        lambda *args: trino.QUIRKS[0],
+        lambda version, vendor: trino.QUIRKS[0],
+        [
+            ("trino", "Trino"),
+        ],
         reports,
         template,
         args.output.resolve(),
