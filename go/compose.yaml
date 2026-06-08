@@ -14,7 +14,17 @@
 
 name: trino
 services:
+  # Work around https://github.com/docker/compose/issues/10596
   test-service:
+    image: alpine:latest
+    command: ["sleep", "infinity"]
+    depends_on:
+      trino:
+        condition: service_healthy
+      trino-init:
+        condition: service_completed_successfully
+
+  trino:
     image: trinodb/trino:latest
     environment:
       TRINO_NODE_ENVIRONMENT: development
@@ -26,3 +36,15 @@ services:
       start_period: 20s
     ports:
       - 8080:8080
+    volumes:
+      # Add a second 'memory' catalog named 'secondmemory'
+      - "./ci/docker/catalog/secondmemory.properties:/etc/trino/catalog/secondmemory.properties:ro"
+
+  trino-init:
+    image: trinodb/trino:latest
+    entrypoint: ["/bin/bash", "/init/bootstrap.sh"]
+    depends_on:
+      trino:
+        condition: service_healthy
+    volumes:
+      - "./ci/docker/init:/init:ro"

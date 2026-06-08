@@ -75,7 +75,7 @@ func (c *trinoConnectionImpl) SetCurrentCatalog(ctx context.Context, catalog str
 		return nil // No-op for empty catalog
 	}
 	_, err := c.Db.ExecContext(ctx, "USE "+quoteIdentifier(catalog)+".information_schema")
-	return err
+	return c.ErrorHelper.WrapInvalidArgument(err, "failed to set current catalog to %s", catalog)
 }
 
 // SetCurrentDbSchema implements driverbase.CurrentNamespacer.
@@ -84,7 +84,7 @@ func (c *trinoConnectionImpl) SetCurrentDbSchema(ctx context.Context, schema str
 		return nil // No-op for empty schema
 	}
 	_, err := c.Db.ExecContext(ctx, "USE "+quoteIdentifier(schema))
-	return err
+	return c.ErrorHelper.WrapInvalidArgument(err, "failed to set current schema to %s", schema)
 }
 
 func (c *trinoConnectionImpl) PrepareDriverInfo(ctx context.Context, infoCodes []adbc.InfoCode) error {
@@ -207,7 +207,8 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwra
 	params := stmt.(*trinoStatement).GetAdditionalExecParams()
 
 	schema := stream.Schema()
-	if err := c.createTableIfNeeded(ctx, conn, options.TableName, schema, options, params); err != nil {
+	qualifiedTable := qualifiedTableName(options.CatalogName, options.SchemaName, options.TableName)
+	if err := c.createTableIfNeeded(ctx, conn, qualifiedTable, schema, options, params); err != nil {
 		return -1, c.ErrorHelper.WrapIO(err, "failed to create table")
 	}
 
@@ -223,7 +224,7 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwra
 	}
 
 	// Use Trino-specific batching with accurate serialized size measurement
-	return c.executeDynamicBatchedIngest(ctx, conn, options, stream, params)
+	return c.executeDynamicBatchedIngest(ctx, conn, qualifiedTable, options, stream, params)
 }
 
 // executeDynamicBatchedIngest performs batched INSERT with incremental query building.
@@ -237,6 +238,7 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwra
 func (c *trinoConnectionImpl) executeDynamicBatchedIngest(
 	ctx context.Context,
 	conn *sqlwrapper.LoggingConn,
+	qualifiedTable string,
 	options *driverbase.BulkIngestOptions,
 	stream array.RecordReader,
 	params []any,
@@ -245,8 +247,7 @@ func (c *trinoConnectionImpl) executeDynamicBatchedIngest(
 	schema := stream.Schema()
 	numCols := len(schema.Fields())
 
-	quotedTableName := quoteIdentifier(options.TableName)
-	baseQuery := fmt.Sprintf("INSERT INTO %s VALUES ", quotedTableName)
+	baseQuery := fmt.Sprintf("INSERT INTO %s VALUES ", qualifiedTable)
 
 	for stream.Next() {
 		recordBatch := stream.RecordBatch()
@@ -394,21 +395,22 @@ func (c *trinoConnectionImpl) executeBatch(
 	return rowsAffected, nil
 }
 
-// createTableIfNeeded creates the table based on the ingest mode
-func (c *trinoConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, options *driverbase.BulkIngestOptions, params []any) error {
+// createTableIfNeeded creates the table based on the ingest mode.
+// qualifiedTable is an already-quoted, optionally catalog/schema-qualified identifier.
+func (c *trinoConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sqlwrapper.LoggingConn, qualifiedTable string, schema *arrow.Schema, options *driverbase.BulkIngestOptions, params []any) error {
 	switch options.Mode {
 	case adbc.OptionValueIngestModeCreate:
 		// Create the table (fail if exists)
-		return c.createTable(ctx, conn, tableName, schema, false, params)
+		return c.createTable(ctx, conn, qualifiedTable, schema, false, params)
 	case adbc.OptionValueIngestModeCreateAppend:
 		// Create the table if it doesn't exist
-		return c.createTable(ctx, conn, tableName, schema, true, params)
+		return c.createTable(ctx, conn, qualifiedTable, schema, true, params)
 	case adbc.OptionValueIngestModeReplace:
 		// Drop and recreate the table
-		if err := c.dropTable(ctx, conn, tableName, params); err != nil {
+		if err := c.dropTable(ctx, conn, qualifiedTable, params); err != nil {
 			return err
 		}
-		return c.createTable(ctx, conn, tableName, schema, false, params)
+		return c.createTable(ctx, conn, qualifiedTable, schema, false, params)
 	case adbc.OptionValueIngestModeAppend:
 		// Table should already exist, do nothing
 		return nil
@@ -417,14 +419,15 @@ func (c *trinoConnectionImpl) createTableIfNeeded(ctx context.Context, conn *sql
 	}
 }
 
-// createTable creates a Trino table from Arrow schema
-func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, schema *arrow.Schema, ifNotExists bool, params []any) error {
+// createTable creates a Trino table from Arrow schema.
+// qualifiedTable is an already-quoted, optionally catalog/schema-qualified identifier.
+func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.LoggingConn, qualifiedTable string, schema *arrow.Schema, ifNotExists bool, params []any) error {
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("CREATE TABLE ")
 	if ifNotExists {
 		queryBuilder.WriteString("IF NOT EXISTS ")
 	}
-	queryBuilder.WriteString(quoteIdentifier(tableName))
+	queryBuilder.WriteString(qualifiedTable)
 	queryBuilder.WriteString(" (")
 
 	for i, field := range schema.Fields() {
@@ -449,9 +452,10 @@ func (c *trinoConnectionImpl) createTable(ctx context.Context, conn *sqlwrapper.
 	return err
 }
 
-// dropTable drops a Trino table
-func (c *trinoConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, tableName string, params []any) error {
-	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", quoteIdentifier(tableName))
+// dropTable drops a Trino table.
+// qualifiedTable is an already-quoted, optionally catalog/schema-qualified identifier.
+func (c *trinoConnectionImpl) dropTable(ctx context.Context, conn *sqlwrapper.LoggingConn, qualifiedTable string, params []any) error {
+	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s", qualifiedTable)
 	_, err := conn.ExecContext(ctx, dropSQL, params...)
 	return err
 }
@@ -556,4 +560,18 @@ func (c *trinoConnectionImpl) ListTableTypes(ctx context.Context) ([]string, err
 // quoteIdentifier properly quotes a SQL identifier, escaping any internal quotes
 func quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+// qualifiedTableName builds a quoted, optionally catalog/schema-qualified
+// table identifier such as "catalog"."schema"."table".
+func qualifiedTableName(catalog, schema, table string) string {
+	parts := make([]string, 0, 3)
+	if catalog != "" {
+		parts = append(parts, quoteIdentifier(catalog))
+	}
+	if schema != "" {
+		parts = append(parts, quoteIdentifier(schema))
+	}
+	parts = append(parts, quoteIdentifier(table))
+	return strings.Join(parts, ".")
 }

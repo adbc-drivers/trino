@@ -27,6 +27,8 @@ class TrinoQuirks(model.DriverQuirks):
     short_version = "481"
     features = model.DriverFeatures(
         connection_get_table_schema=True,
+        connection_set_current_catalog=True,
+        connection_set_current_schema=True,
         connection_transactions=False,
         get_objects=True,
         get_objects_constraints_foreign=False,
@@ -34,8 +36,8 @@ class TrinoQuirks(model.DriverQuirks):
         get_objects_constraints_unique=False,
         statement_bind=True,
         statement_bulk_ingest=True,
-        statement_bulk_ingest_catalog=False,
-        statement_bulk_ingest_schema=False,
+        statement_bulk_ingest_catalog=True,
+        statement_bulk_ingest_schema=True,
         statement_bulk_ingest_temporary=False,
         statement_execute_schema=True,
         statement_get_parameter_schema=False,
@@ -43,6 +45,9 @@ class TrinoQuirks(model.DriverQuirks):
         statement_rows_affected=True,
         current_catalog="memory",
         current_schema="default",
+        secondary_schema="secondschema",
+        secondary_catalog="secondmemory",
+        secondary_catalog_schema="myschema",
         supported_xdbc_fields=[],
     )
     setup = model.DriverSetup(

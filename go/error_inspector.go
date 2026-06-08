@@ -43,7 +43,7 @@ func (t TrinoErrorInspector) InspectError(err error, defaultStatus adbc.Status) 
 			switch trinoErr.ErrorName {
 			case "SYNTAX_ERROR", "INVALID_COLUMN_REFERENCE", "MISSING_COLUMN_NAME", "DUPLICATE_COLUMN_NAME":
 				status = adbc.StatusInvalidArgument
-			case "NOT_FOUND", "COLUMN_NOT_FOUND", "TABLE_NOT_FOUND", "SCHEMA_NOT_FOUND", "FUNCTION_NOT_FOUND":
+			case "NOT_FOUND", "CATALOG_NOT_FOUND", "COLUMN_NOT_FOUND", "TABLE_NOT_FOUND", "SCHEMA_NOT_FOUND", "FUNCTION_NOT_FOUND":
 				status = adbc.StatusNotFound
 			case "ALREADY_EXISTS":
 				status = adbc.StatusAlreadyExists
