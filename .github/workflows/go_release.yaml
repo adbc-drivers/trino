@@ -76,7 +76,7 @@ jobs:
           check-latest: true
           go-version-file: go/go.mod
 
-      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
+      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
         with:
           pixi-version: v0.63.2
           run-install: false
@@ -178,7 +178,7 @@ jobs:
           check-latest: true
           go-version-file: go/go.mod
 
-      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
+      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
         with:
           pixi-version: v0.63.2
           run-install: false
@@ -269,7 +269,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: docs
+          name: docs-${{ matrix.vendor_version }}
           path: "go/generated/trino.md"
           retention-days: 7
 
@@ -303,7 +303,7 @@ jobs:
           check-latest: true
           go-version-file: go/go.mod
 
-      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
+      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
         with:
           pixi-version: v0.63.2
           run-install: false
@@ -335,8 +335,7 @@ jobs:
             source .env.release
           fi
           set +a
-          pixi run adbc-make check CI=true VERBOSE=true DRIVER=trino IMPL_LANG=go
-
+          pixi run adbc-make check CI=true VERBOSE=true DRIVER=trino IMPL_LANG=go  RELEASE=true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: drivers-${{ matrix.platform }}-${{ matrix.arch }}
@@ -365,7 +364,7 @@ jobs:
           check-latest: true
           go-version: "stable"
 
-      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
+      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
         with:
           pixi-version: v0.63.2
           run-install: false
@@ -393,7 +392,7 @@ jobs:
             --name trino \
             --root $(pwd) \
             --manifest-template $(pwd)/manifest.toml \
-            ${{ (inputs.release && '--release') || '' }}\
+            --release \
             -o ~/packages \
             ~/drivers/drivers-*-*/
 
@@ -421,7 +420,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: docs-${{ matrix.vendor_version }}
+          name: docs
           path: "go/generated/trino.md"
           retention-days: 2
 
@@ -443,7 +442,7 @@ jobs:
         with:
           cache: false
           go-version: 'stable'
-      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
+      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
         with:
           pixi-version: v0.63.2
           run-install: false
@@ -504,7 +503,7 @@ jobs:
           persist-credentials: false
           submodules: 'recursive'
 
-      - uses: prefix-dev/setup-pixi@1b2de7f3351f171c8b4dfeb558c639cb58ed4ec0  # v0.9.5
+      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
         with:
           pixi-version: v0.63.2
           run-install: false

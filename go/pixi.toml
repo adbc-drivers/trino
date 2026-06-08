@@ -18,7 +18,7 @@
 [workspace]
 authors = ["ADBC Drivers Contributors"]
 channels = ["conda-forge"]
-name = "build"
+name = "adbc-driver-trino"
 platforms = ["linux-64", "osx-arm64", "win-64", "linux-aarch64"]
 version = "0.1.0"
 
@@ -30,7 +30,7 @@ validate = "pytest -vvs --junit-xml=validation-report.xml -rfEsxX validation/tes
 gendocs = "python -m validation.tests.generate_documentation"
 
 [dependencies]
-python = ">=3.13.5,<3.14"
+python = ">=3.14.3,<3.15"
 
 [pypi-dependencies]
 adbc-drivers-dev = { git = "https://github.com/adbc-drivers/dev" }
