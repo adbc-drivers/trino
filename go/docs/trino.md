@@ -107,6 +107,13 @@ The driver also supports the Trino DSN format (see [Go Trino Client documentatio
 
 {{ types|safe }}
 
+## Options
+
+`trino.statement.last_query_id`
+: **Read-only.** **Type:** string.
+
+  Get the query ID of the currently executing or last executed query. This can safely be retrieved concurrently. Note that in some cases, a single query on the ADBC side may result in multiple queries on the Trino side (e.g. a bulk ingest will result in one query for each batch of rows), and so there may not be a canonical query ID as such; this option will retrieve the ID of the last query that happened to execute.
+
 ## Compatibility
 
 {{ compatibility_info|safe }}
