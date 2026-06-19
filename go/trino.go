@@ -19,6 +19,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"math/big"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -128,8 +129,40 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 		return extensions.NewUUIDType(), colType.Nullable, metadata, nil
 	}
 
+	if colType.ScanType != nil {
+		if listType := m.scanTypeToListType(colType.ScanType); listType != nil {
+			metadata := arrow.MetadataFrom(map[string]string{
+				sqlwrapper.MetaKeyDatabaseTypeName: colType.DatabaseTypeName,
+				sqlwrapper.MetaKeyColumnName:       colType.Name,
+			})
+			return listType, colType.Nullable, metadata, nil
+		}
+	}
+
 	// For all other types, fall back to default conversion
 	return m.DefaultTypeConverter.ConvertRawColumnType(colType)
+}
+
+var scanTypeToListMap = map[reflect.Type]arrow.DataType{
+	reflect.TypeOf(trino.NullSliceString{}):  arrow.ListOf(arrow.BinaryTypes.String),
+	reflect.TypeOf(trino.NullSliceInt64{}):   arrow.ListOf(arrow.PrimitiveTypes.Int64),
+	reflect.TypeOf(trino.NullSliceFloat64{}): arrow.ListOf(arrow.PrimitiveTypes.Float64),
+	reflect.TypeOf(trino.NullSliceBool{}):    arrow.ListOf(arrow.FixedWidthTypes.Boolean),
+	reflect.TypeOf(trino.NullSliceTime{}):    arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}),
+	reflect.TypeOf(trino.NullSlice2String{}):  arrow.ListOf(arrow.ListOf(arrow.BinaryTypes.String)),
+	reflect.TypeOf(trino.NullSlice2Int64{}):   arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Int64)),
+	reflect.TypeOf(trino.NullSlice2Float64{}): arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Float64)),
+	reflect.TypeOf(trino.NullSlice2Bool{}):    arrow.ListOf(arrow.ListOf(arrow.FixedWidthTypes.Boolean)),
+	reflect.TypeOf(trino.NullSlice2Time{}):    arrow.ListOf(arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"})),
+	reflect.TypeOf(trino.NullSlice3String{}):  arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.BinaryTypes.String))),
+	reflect.TypeOf(trino.NullSlice3Int64{}):   arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Int64))),
+	reflect.TypeOf(trino.NullSlice3Float64{}): arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Float64))),
+	reflect.TypeOf(trino.NullSlice3Bool{}):    arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.FixedWidthTypes.Boolean))),
+	reflect.TypeOf(trino.NullSlice3Time{}):    arrow.ListOf(arrow.ListOf(arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}))),
+}
+
+func (m *trinoTypeConverter) scanTypeToListType(t reflect.Type) arrow.DataType {
+	return scanTypeToListMap[t]
 }
 
 // Clamps precision to maximum supported value (9 fractional digits = nanoseconds)
@@ -178,10 +211,41 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 		default:
 			return nil, fmt.Errorf("unsupported interval type: %s", dbTypeName)
 		}
+	case *arrow.ListType:
+		lb := builder.(*array.ListBuilder)
+		elemField := arrow.Field{Name: "item", Type: fieldType.Elem(), Nullable: true}
+		childIns, err := m.CreateInserter(&elemField, lb.ValueBuilder())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create child inserter for list: %w", err)
+		}
+		return &listInserter{builder: lb, childInserter: childIns}, nil
 	default:
 		// For all other types, use default inserter
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
 	}
+}
+
+type listInserter struct {
+	builder       *array.ListBuilder
+	childInserter sqlwrapper.Inserter
+}
+
+func (ins *listInserter) AppendValue(sqlValue any) error {
+	if sqlValue == nil {
+		ins.builder.AppendNull()
+		return nil
+	}
+	slice, ok := sqlValue.([]interface{})
+	if !ok {
+		return fmt.Errorf("expected []interface{} for list type, got %T", sqlValue)
+	}
+	ins.builder.Append(true)
+	for _, elem := range slice {
+		if err := ins.childInserter.AppendValue(elem); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func unwrap(val any) (any, error) {

@@ -160,6 +160,7 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 			Name:             colType.Name(),
 			DatabaseTypeName: colType.DatabaseTypeName(),
 			Nullable:         true, // Assume every column in always nullable since trino go client does not provide clean way to get nullability.
+			ScanType:         colType.ScanType(),
 		}
 
 		// Add precision and scale if available
