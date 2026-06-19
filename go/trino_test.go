@@ -680,6 +680,101 @@ func (s *TrinoTests) TestSelect() {
 	}
 }
 
+func (s *TrinoTests) TestSelectArray() {
+	for _, testCase := range []selectCase{
+		{
+			name:  "array_varchar",
+			query: "SELECT ARRAY['a', 'b', 'c'] AS arr",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "arr",
+					Type:     arrow.ListOf(arrow.BinaryTypes.String),
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "arr",
+						"sql.database_type_name": "ARRAY(VARCHAR(1))",
+					}),
+				},
+			}, nil),
+			expected: `[{"arr": ["a", "b", "c"]}]`,
+		},
+		{
+			name:  "array_integer",
+			query: "SELECT ARRAY[1, 2, 3] AS int_arr",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "int_arr",
+					Type:     arrow.ListOf(arrow.PrimitiveTypes.Int64),
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "int_arr",
+						"sql.database_type_name": "ARRAY(INTEGER)",
+					}),
+				},
+			}, nil),
+			expected: `[{"int_arr": [1, 2, 3]}]`,
+		},
+		{
+			name:  "array_nested",
+			query: "SELECT ARRAY[ARRAY[1,2], ARRAY[3,4]] AS nested",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "nested",
+					Type:     arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Int64)),
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "nested",
+						"sql.database_type_name": "ARRAY(ARRAY(INTEGER))",
+					}),
+				},
+			}, nil),
+			expected: `[{"nested": [[1, 2], [3, 4]]}]`,
+		},
+		{
+			name:  "null_array",
+			query: "SELECT CAST(NULL AS ARRAY(VARCHAR)) AS null_arr",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "null_arr",
+					Type:     arrow.ListOf(arrow.BinaryTypes.String),
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "null_arr",
+						"sql.database_type_name": "ARRAY(VARCHAR)",
+					}),
+				},
+			}, nil),
+			expected: `[{"null_arr": null}]`,
+		},
+	} {
+		s.Run(testCase.name, func() {
+			s.NoError(s.stmt.SetSqlQuery(s.ctx, testCase.query))
+
+			rdr, rows, err := s.stmt.ExecuteQuery(s.ctx)
+			s.NoError(err)
+			if rdr != nil {
+				defer rdr.Release()
+			}
+
+			s.Truef(testCase.schema.Equal(rdr.Schema()), "expected: %s\ngot: %s", testCase.schema, rdr.Schema())
+			s.Equal(int64(-1), rows)
+			s.Truef(rdr.Next(), "no record, error? %s", rdr.Err())
+
+			expectedRecord, _, err := array.RecordFromJSON(s.Quirks.Alloc(), testCase.schema, bytes.NewReader([]byte(testCase.expected)))
+			s.NoError(err)
+			defer expectedRecord.Release()
+
+			rec := rdr.RecordBatch()
+			s.NotNil(rec)
+
+			s.Truef(array.RecordEqual(expectedRecord, rec), "expected: %s\ngot: %s", expectedRecord, rec)
+
+			s.False(rdr.Next())
+			s.NoError(rdr.Err())
+		})
+	}
+}
+
 type TrinoTestSuite struct {
 	suite.Suite
 	dsn    string
