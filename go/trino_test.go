@@ -533,7 +533,7 @@ func (s *TrinoTests) TestSelect() {
 		INSERT INTO memory.default.test_types VALUES
 			(true, 42, 12345, 9876543210, 3.25, 6.75, 'hello world', ARRAY['a', 'b']),
 			(false, NULL, 54321, NULL, 1.5, NULL, NULL, NULL),
-			(true, 100, 99999, 1234567890, 2.0, 8.5, 'test string', ARRAY['x'])
+			(true, 100, 99999, 1234567890, 2.0, 8.5, 'test string', ARRAY[])
 	`))
 	_, err = s.stmt.ExecuteUpdate(s.ctx)
 	s.NoError(err)
@@ -666,7 +666,7 @@ func (s *TrinoTests) TestSelect() {
 					}),
 				},
 			}, nil),
-			expected: `[{"tags": ["a", "b"]}, {"tags": null}, {"tags": ["x"]}]`,
+			expected: `[{"tags": ["a", "b"]}, {"tags": null}, {"tags": []}]`,
 		},
 	} {
 		s.Run(testCase.name, func() {
