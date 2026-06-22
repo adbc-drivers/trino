@@ -241,6 +241,7 @@ func (q *TrinoQuirks) SupportsTransactions() bool                  { return fals
 func (q *TrinoQuirks) SupportsGetParameterSchema() bool            { return false }
 func (q *TrinoQuirks) SupportsDynamicParameterBinding() bool       { return false }
 func (q *TrinoQuirks) SupportsErrorIngestIncompatibleSchema() bool { return false }
+func (q *TrinoQuirks) SupportsGetTableSchema() bool               { return true }
 func (q *TrinoQuirks) Catalog() string                             { return "memory" }
 func (q *TrinoQuirks) DBSchema() string                            { return "default" }
 
@@ -521,8 +522,7 @@ func (s *TrinoTests) TestSelect() {
 			bigint_col BIGINT,
 			float_col REAL,
 			double_col DOUBLE,
-			varchar_col VARCHAR(100),
-			arr_col ARRAY(VARCHAR)
+			varchar_col VARCHAR(100)
 		)
 	`))
 	_, err = s.stmt.ExecuteUpdate(s.ctx)
@@ -531,9 +531,9 @@ func (s *TrinoTests) TestSelect() {
 	// Insert multiple rows including NULLs to test nullable behavior
 	s.NoError(s.stmt.SetSqlQuery(s.ctx, `
 		INSERT INTO memory.default.test_types VALUES
-			(true, 42, 12345, 9876543210, 3.25, 6.75, 'hello world', ARRAY['a', 'b']),
-			(false, NULL, 54321, NULL, 1.5, NULL, NULL, NULL),
-			(true, 100, 99999, 1234567890, 2.0, 8.5, 'test string', ARRAY[])
+			(true, 42, 12345, 9876543210, 3.25, 6.75, 'hello world'),
+			(false, NULL, 54321, NULL, 1.5, NULL, NULL),
+			(true, 100, 99999, 1234567890, 2.0, 8.5, 'test string')
 	`))
 	_, err = s.stmt.ExecuteUpdate(s.ctx)
 	s.NoError(err)
@@ -651,22 +651,6 @@ func (s *TrinoTests) TestSelect() {
 				},
 			}, nil),
 			expected: `[{"greeting": "hello world"}, {"greeting": null}, {"greeting": "test string"}]`,
-		},
-		{
-			name:  "array_varchar",
-			query: "SELECT arr_col AS tags FROM memory.default.test_types",
-			schema: arrow.NewSchema([]arrow.Field{
-				{
-					Name:     "tags",
-					Type:     arrow.ListOf(arrow.BinaryTypes.String),
-					Nullable: true,
-					Metadata: arrow.MetadataFrom(map[string]string{
-						"sql.column_name":        "tags",
-						"sql.database_type_name": "ARRAY(VARCHAR)",
-					}),
-				},
-			}, nil),
-			expected: `[{"tags": ["a", "b"]}, {"tags": null}, {"tags": []}]`,
 		},
 	} {
 		s.Run(testCase.name, func() {
