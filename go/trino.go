@@ -129,14 +129,12 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 		return extensions.NewUUIDType(), colType.Nullable, metadata, nil
 	}
 
-	if colType.ScanType != nil {
-		if listType := m.scanTypeToListType(colType.ScanType); listType != nil {
-			metadata := arrow.MetadataFrom(map[string]string{
-				sqlwrapper.MetaKeyDatabaseTypeName: colType.DatabaseTypeName,
-				sqlwrapper.MetaKeyColumnName:       colType.Name,
-			})
-			return listType, colType.Nullable, metadata, nil
-		}
+	if listType := scanTypeToListMap[colType.ScanType]; listType != nil {
+		metadata := arrow.MetadataFrom(map[string]string{
+			sqlwrapper.MetaKeyDatabaseTypeName: colType.DatabaseTypeName,
+			sqlwrapper.MetaKeyColumnName:       colType.Name,
+		})
+		return listType, colType.Nullable, metadata, nil
 	}
 
 	// For all other types, fall back to default conversion
@@ -159,10 +157,6 @@ var scanTypeToListMap = map[reflect.Type]arrow.DataType{
 	reflect.TypeFor[trino.NullSlice3Float64](): arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Float64))),
 	reflect.TypeFor[trino.NullSlice3Bool]():    arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.FixedWidthTypes.Boolean))),
 	reflect.TypeFor[trino.NullSlice3Time]():    arrow.ListOf(arrow.ListOf(arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}))),
-}
-
-func (m *trinoTypeConverter) scanTypeToListType(t reflect.Type) arrow.DataType {
-	return scanTypeToListMap[t]
 }
 
 // Clamps precision to maximum supported value (9 fractional digits = nanoseconds)

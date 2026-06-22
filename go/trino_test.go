@@ -651,37 +651,6 @@ func (s *TrinoTests) TestSelect() {
 			}, nil),
 			expected: `[{"greeting": "hello world"}, {"greeting": null}, {"greeting": "test string"}]`,
 		},
-	} {
-		s.Run(testCase.name, func() {
-			s.NoError(s.stmt.SetSqlQuery(s.ctx, testCase.query))
-
-			rdr, rows, err := s.stmt.ExecuteQuery(s.ctx)
-			s.NoError(err)
-			if rdr != nil {
-				defer rdr.Release()
-			}
-
-			s.Truef(testCase.schema.Equal(rdr.Schema()), "expected: %s\ngot: %s", testCase.schema, rdr.Schema())
-			s.Equal(int64(-1), rows)
-			s.Truef(rdr.Next(), "no record, error? %s", rdr.Err())
-
-			expectedRecord, _, err := array.RecordFromJSON(s.Quirks.Alloc(), testCase.schema, bytes.NewReader([]byte(testCase.expected)))
-			s.NoError(err)
-			defer expectedRecord.Release()
-
-			rec := rdr.RecordBatch()
-			s.NotNil(rec)
-
-			s.Truef(array.RecordEqual(expectedRecord, rec), "expected: %s\ngot: %s", expectedRecord, rec)
-
-			s.False(rdr.Next())
-			s.NoError(rdr.Err())
-		})
-	}
-}
-
-func (s *TrinoTests) TestSelectArray() {
-	for _, testCase := range []selectCase{
 		{
 			name:  "array_varchar",
 			query: "SELECT ARRAY['a', 'b', 'c'] AS arr",
