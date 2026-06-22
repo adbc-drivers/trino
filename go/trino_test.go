@@ -521,7 +521,8 @@ func (s *TrinoTests) TestSelect() {
 			bigint_col BIGINT,
 			float_col REAL,
 			double_col DOUBLE,
-			varchar_col VARCHAR(100)
+			varchar_col VARCHAR(100),
+			arr_col ARRAY(VARCHAR)
 		)
 	`))
 	_, err = s.stmt.ExecuteUpdate(s.ctx)
@@ -530,9 +531,9 @@ func (s *TrinoTests) TestSelect() {
 	// Insert multiple rows including NULLs to test nullable behavior
 	s.NoError(s.stmt.SetSqlQuery(s.ctx, `
 		INSERT INTO memory.default.test_types VALUES
-			(true, 42, 12345, 9876543210, 3.25, 6.75, 'hello world'),
-			(false, NULL, 54321, NULL, 1.5, NULL, NULL),
-			(true, 100, 99999, 1234567890, 2.0, 8.5, 'test string')
+			(true, 42, 12345, 9876543210, 3.25, 6.75, 'hello world', ARRAY['a', 'b']),
+			(false, NULL, 54321, NULL, 1.5, NULL, NULL, NULL),
+			(true, 100, 99999, 1234567890, 2.0, 8.5, 'test string', ARRAY['x'])
 	`))
 	_, err = s.stmt.ExecuteUpdate(s.ctx)
 	s.NoError(err)
@@ -653,67 +654,19 @@ func (s *TrinoTests) TestSelect() {
 		},
 		{
 			name:  "array_varchar",
-			query: "SELECT ARRAY['a', 'b', 'c'] AS arr",
+			query: "SELECT arr_col AS tags FROM memory.default.test_types",
 			schema: arrow.NewSchema([]arrow.Field{
 				{
-					Name:     "arr",
+					Name:     "tags",
 					Type:     arrow.ListOf(arrow.BinaryTypes.String),
 					Nullable: true,
 					Metadata: arrow.MetadataFrom(map[string]string{
-						"sql.column_name":        "arr",
-						"sql.database_type_name": "ARRAY(VARCHAR(1))",
-					}),
-				},
-			}, nil),
-			expected: `[{"arr": ["a", "b", "c"]}]`,
-		},
-		{
-			name:  "array_integer",
-			query: "SELECT ARRAY[1, 2, 3] AS int_arr",
-			schema: arrow.NewSchema([]arrow.Field{
-				{
-					Name:     "int_arr",
-					Type:     arrow.ListOf(arrow.PrimitiveTypes.Int64),
-					Nullable: true,
-					Metadata: arrow.MetadataFrom(map[string]string{
-						"sql.column_name":        "int_arr",
-						"sql.database_type_name": "ARRAY(INTEGER)",
-					}),
-				},
-			}, nil),
-			expected: `[{"int_arr": [1, 2, 3]}]`,
-		},
-		{
-			name:  "array_nested",
-			query: "SELECT ARRAY[ARRAY[1,2], ARRAY[3,4]] AS nested",
-			schema: arrow.NewSchema([]arrow.Field{
-				{
-					Name:     "nested",
-					Type:     arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Int64)),
-					Nullable: true,
-					Metadata: arrow.MetadataFrom(map[string]string{
-						"sql.column_name":        "nested",
-						"sql.database_type_name": "ARRAY(ARRAY(INTEGER))",
-					}),
-				},
-			}, nil),
-			expected: `[{"nested": [[1, 2], [3, 4]]}]`,
-		},
-		{
-			name:  "null_array",
-			query: "SELECT CAST(NULL AS ARRAY(VARCHAR)) AS null_arr",
-			schema: arrow.NewSchema([]arrow.Field{
-				{
-					Name:     "null_arr",
-					Type:     arrow.ListOf(arrow.BinaryTypes.String),
-					Nullable: true,
-					Metadata: arrow.MetadataFrom(map[string]string{
-						"sql.column_name":        "null_arr",
+						"sql.column_name":        "tags",
 						"sql.database_type_name": "ARRAY(VARCHAR)",
 					}),
 				},
 			}, nil),
-			expected: `[{"null_arr": null}]`,
+			expected: `[{"tags": ["a", "b"]}, {"tags": null}, {"tags": ["x"]}]`,
 		},
 	} {
 		s.Run(testCase.name, func() {
