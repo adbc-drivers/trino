@@ -241,7 +241,7 @@ func (q *TrinoQuirks) SupportsTransactions() bool                  { return fals
 func (q *TrinoQuirks) SupportsGetParameterSchema() bool            { return false }
 func (q *TrinoQuirks) SupportsDynamicParameterBinding() bool       { return false }
 func (q *TrinoQuirks) SupportsErrorIngestIncompatibleSchema() bool { return false }
-func (q *TrinoQuirks) SupportsGetTableSchema() bool               { return true }
+func (q *TrinoQuirks) SupportsGetTableSchema() bool                { return true }
 func (q *TrinoQuirks) Catalog() string                             { return "memory" }
 func (q *TrinoQuirks) DBSchema() string                            { return "default" }
 
