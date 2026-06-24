@@ -16,4 +16,4 @@
 drop = "test_array_varchar"
 
 [tags]
-sql-type-name = "ARRAY(VARCHAR)"
+sql-type-name = "ARRAY"
