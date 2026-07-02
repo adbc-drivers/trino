@@ -84,7 +84,7 @@ jobs:
           check-latest: true
           go-version-file: go/go.mod
 
-      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
+      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
         with:
           pixi-version: v0.63.2
           run-install: false
@@ -139,7 +139,7 @@ jobs:
 
           if [[ -f ci/scripts/pre-test.sh ]]; then
             echo "Loading pre-test"
-            ./ci/scripts/pre-test.sh ${{ matrix.platform }} ${{ matrix.arch }}
+            ./ci/scripts/pre-test.sh ${{ matrix.platform }} ${{ matrix.arch }} "test-service"
           fi
 
           go test -tags assert -v ./...
@@ -162,7 +162,8 @@ jobs:
       matrix:
         include:
           # I think we only need to test one platform, but we can change that later
-          - { platform: linux, arch: amd64, runner: ubuntu-latest, service_name: "test-service", vendor_version: "latest" }
+          - { platform: linux, arch: amd64, runner: ubuntu-latest, service_name: "test-service", vendor_version: "latest", environment: null, azure: false }
+    environment: ${{ matrix.environment }}
     permissions:
       contents: read
     steps:
@@ -186,7 +187,7 @@ jobs:
           check-latest: true
           go-version-file: go/go.mod
 
-      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
+      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
         with:
           pixi-version: v0.63.2
           run-install: false
@@ -221,7 +222,7 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: go
         run: |
-          if [[ -f compose.yaml ]]; then
+          if [[ -f compose.yaml ]] && [[ -n "${{ matrix.service_name }}" ]]; then
             if ! docker compose up --detach --wait ${{ matrix.service_name }}; then
               echo "Service failed to start"
               echo "Logs:"
@@ -311,7 +312,7 @@ jobs:
           check-latest: true
           go-version-file: go/go.mod
 
-      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
+      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
         with:
           pixi-version: v0.63.2
           run-install: false
@@ -372,7 +373,7 @@ jobs:
           check-latest: true
           go-version: "stable"
 
-      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
+      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
         with:
           pixi-version: v0.63.2
           run-install: false
@@ -450,7 +451,7 @@ jobs:
         with:
           cache: true
           go-version: 'stable'
-      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
+      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
         with:
           pixi-version: v0.63.2
           run-install: false
@@ -511,7 +512,7 @@ jobs:
           persist-credentials: false
           submodules: 'recursive'
 
-      - uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11  # v0.9.6
+      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
         with:
           pixi-version: v0.63.2
           run-install: false
