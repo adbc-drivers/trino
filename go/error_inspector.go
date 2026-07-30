@@ -45,7 +45,7 @@ func (t TrinoErrorInspector) InspectError(err error, defaultStatus adbc.Status) 
 				status = adbc.StatusInvalidArgument
 			case "NOT_FOUND", "CATALOG_NOT_FOUND", "COLUMN_NOT_FOUND", "TABLE_NOT_FOUND", "SCHEMA_NOT_FOUND", "FUNCTION_NOT_FOUND":
 				status = adbc.StatusNotFound
-			case "ALREADY_EXISTS":
+			case "ALREADY_EXISTS", "TABLE_ALREADY_EXISTS", "TYPE_MISMATCH":
 				status = adbc.StatusAlreadyExists
 			case "PERMISSION_DENIED":
 				status = adbc.StatusUnauthorized
