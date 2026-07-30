@@ -49,6 +49,10 @@ func (st *trinoStatement) GetAdditionalExecParams() []any {
 	}
 }
 
+func (st *trinoStatement) MakeTypeConverter(vendorName string) sqlwrapper.TypeConverter {
+	return typeConverter
+}
+
 type trinoProgressCallback struct {
 	st *trinoStatement
 }

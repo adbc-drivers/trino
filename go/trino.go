@@ -42,6 +42,12 @@ type trinoTypeConverter struct {
 	sqlwrapper.DefaultTypeConverter
 }
 
+const vendorName = "Trino"
+
+var typeConverter = &trinoTypeConverter{
+	DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: vendorName},
+}
+
 // ConvertRawColumnType implements TypeConverter with Trino-specific enhancements
 func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType) (arrow.DataType, bool, arrow.Metadata, error) {
 	// Handle Trino-specific type mappings first
@@ -597,13 +603,8 @@ func (f *trinoConnectionFactory) CreateStatement(stmt *sqlwrapper.StatementImplB
 
 // NewDriver constructs the ADBC Driver for "trino".
 func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
-	vendorName := "Trino"
-	typeConverter := &trinoTypeConverter{
-		DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: vendorName},
-	}
-
 	factory := &trinoConnectionFactory{}
-	driver := sqlwrapper.NewDriver(alloc, "trino", vendorName, NewTrinoDBFactory(), typeConverter).
+	driver := sqlwrapper.NewDriver(alloc, "trino", vendorName, NewTrinoDBFactory()).
 		WithConnectionFactory(factory).
 		WithStatementFactory(factory).
 		WithErrorInspector(TrinoErrorInspector{})

@@ -173,7 +173,7 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 			wrappedColType.Precision = &l
 		}
 
-		arrowType, nullable, metadata, err := c.TypeConverter.ConvertRawColumnType(wrappedColType)
+		arrowType, nullable, metadata, err := typeConverter.ConvertRawColumnType(wrappedColType)
 		if err != nil {
 			return nil, c.ErrorHelper.WrapInternal(err, "failed to convert column type for %s", colType.Name())
 		}
@@ -216,7 +216,7 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwra
 	if options.IngestBatchSize > 0 {
 		return sqlwrapper.ExecuteBatchedBulkIngest(
 			ctx, stmt, conn, options, stream,
-			c.TypeConverter, c, &c.Base().ErrorHelper,
+			typeConverter, c, &c.Base().ErrorHelper,
 		)
 	}
 
@@ -266,7 +266,7 @@ func (c *trinoConnectionImpl) executeDynamicBatchedIngest(
 				arr := recordBatch.Column(colIdx)
 				field := schema.Field(colIdx)
 
-				goValue, err := c.TypeConverter.ConvertArrowToGo(arr, rowIdx, &field)
+				goValue, err := typeConverter.ConvertArrowToGo(arr, rowIdx, &field)
 				if err != nil {
 					return totalRowsInserted, c.ErrorHelper.WrapIO(err, "failed to convert value")
 				}
