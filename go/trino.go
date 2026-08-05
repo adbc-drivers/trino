@@ -57,7 +57,7 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 	colType.Nullable = true
 
 	switch typeName {
-	case "TIMESTAMP WITH TIME ZONE":
+	case "TIMESTAMP", "TIMESTAMP WITH TIME ZONE":
 		// Try to get precision from Precision field (which represents fractional seconds precision)
 		var timestampType arrow.DataType
 		metadataMap := map[string]string{
@@ -70,10 +70,14 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 			precision := *colType.Precision
 			metadataMap[sqlwrapper.MetaKeyFractionalSecondsPrecision] = fmt.Sprintf("%d", precision)
 			timeUnit := convertPrecisionToTimeUnit(precision)
-			timestampType = &arrow.TimestampType{Unit: timeUnit, TimeZone: "UTC"}
+			timestampType = &arrow.TimestampType{Unit: timeUnit}
 		} else {
 			// No precision info available, default to microseconds (most common)
-			timestampType = &arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}
+			timestampType = &arrow.TimestampType{Unit: arrow.Microsecond}
+		}
+
+		if typeName == "TIMESTAMP WITH TIME ZONE" {
+			timestampType.(*arrow.TimestampType).TimeZone = "UTC"
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
@@ -165,13 +169,19 @@ var scanTypeToListMap = map[reflect.Type]arrow.DataType{
 	reflect.TypeFor[trino.NullSlice3Time]():    arrow.ListOf(arrow.ListOf(arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}))),
 }
 
-// Clamps precision to maximum supported value (9 fractional digits = nanoseconds)
 func convertPrecisionToTimeUnit(precision int64) arrow.TimeUnit {
-	if precision > 9 {
-		// Clamp to max supported precision
-		precision = 9
+	switch {
+	case precision == 0:
+		return arrow.Second
+	case precision >= 1 && precision <= 3:
+		return arrow.Millisecond
+	case precision >= 4 && precision <= 6:
+		return arrow.Microsecond
+	case precision >= 7:
+		return arrow.Nanosecond
+	default:
+		return arrow.Microsecond
 	}
-	return arrow.TimeUnit(precision / 3)
 }
 
 // CreateInserter creates Trino-specific inserters bound to builders for enhanced performance
