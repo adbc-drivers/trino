@@ -84,7 +84,7 @@ jobs:
           check-latest: true
           go-version-file: go/go.mod
 
-      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
+      - uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347  # v0.10.1
         with:
           pixi-version: v0.72.0
           run-install: false
@@ -151,9 +151,6 @@ jobs:
 
           go test -tags assert -v ./...
 
-          if [[ -f ci/scripts/post-test.sh ]]; then
-            ./ci/scripts/post-test.sh
-          fi
 
       - name: go mod tidy
         if: runner.os == 'Linux'
@@ -197,7 +194,7 @@ jobs:
           check-latest: true
           go-version-file: go/go.mod
 
-      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
+      - uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347  # v0.10.1
         with:
           pixi-version: v0.72.0
           run-install: false
@@ -225,7 +222,7 @@ jobs:
             source .env.test
           fi
           set +a
-          pixi run adbc-make build DEBUG=true VERBOSE=true DRIVER=trino IMPL_LANG=go
+          pixi run adbc-make build DEBUG=true VERBOSE=true
       - name: Start Test Dependencies
         # Can't use Docker on macOS AArch64 runners, and Windows containers
         # work but often the container doesn't support Windows
@@ -276,11 +273,8 @@ jobs:
             pixi run validate
           fi
 
-          if [[ -f ci/scripts/post-test.sh ]]; then
-            ./ci/scripts/post-test.sh
-          fi
-
           cp validation-report.xml validation-report-${{ matrix.vendor_version }}.xml
+
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
@@ -329,7 +323,7 @@ jobs:
           check-latest: true
           go-version-file: go/go.mod
 
-      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
+      - uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347  # v0.10.1
         with:
           pixi-version: v0.72.0
           run-install: false
@@ -346,6 +340,17 @@ jobs:
         run: |
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
+      - name: Add dumpbin to PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) {
+            throw "Could not find dumpbin.exe using vswhere"
+          }
+          Split-Path $dumpbin -Parent | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Build Library
         working-directory: go
         run: |
@@ -361,7 +366,7 @@ jobs:
             source .env.release
           fi
           set +a
-          pixi run adbc-make check CI=true VERBOSE=true DRIVER=trino IMPL_LANG=go
+          pixi run adbc-make check CI=true VERBOSE=true
           if [[ -f ci/scripts/post-build.sh ]]; then
             ./ci/scripts/post-build.sh release ${{ matrix.platform }} ${{ matrix.arch }}
           fi
@@ -394,7 +399,7 @@ jobs:
           check-latest: true
           go-version: "stable"
 
-      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
+      - uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347  # v0.10.1
         with:
           pixi-version: v0.72.0
           run-install: false
@@ -472,7 +477,7 @@ jobs:
         with:
           cache: true
           go-version: 'stable'
-      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
+      - uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347  # v0.10.1
         with:
           pixi-version: v0.72.0
           run-install: false
@@ -533,7 +538,7 @@ jobs:
           persist-credentials: false
           submodules: 'recursive'
 
-      - uses: prefix-dev/setup-pixi@a09b6247153796b190642a2b53fac4241043cf6f  # v0.10.0
+      - uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347  # v0.10.1
         with:
           pixi-version: v0.72.0
           run-install: false
