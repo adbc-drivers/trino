@@ -119,12 +119,12 @@ jobs:
 
       - name: Build Library
         working-directory: go
-        env:
-          CC: aarch64-w64-mingw32-gcc
-          CXX: aarch64-w64-mingw32-g++
         run: |
           which gcc
+          echo "CC: ${CC:-}"
           which "${CC}"
+          ls /clangarm64/bin/
+          export CC=/clangarm64/bin/gcc
 
           if [[ -f ci/scripts/pre-build.sh ]]; then
             ./ci/scripts/pre-build.sh release ${{ matrix.platform }} ${{ matrix.arch }}
