@@ -122,10 +122,6 @@ jobs:
         working-directory: go
         run: |
           which gcc
-          echo "CC: ${CC:-}"
-          ls /clangarm64/bin/
-          ls -laR ${{ steps.msys2.outputs.msys2-location }}
-          export CC=/clangarm64/bin/gcc
 
           if [[ -f ci/scripts/pre-build.sh ]]; then
             ./ci/scripts/pre-build.sh release ${{ matrix.platform }} ${{ matrix.arch }}
