@@ -33,5 +33,5 @@ gendocs = "python -m validation.tests.generate_documentation"
 python = ">=3.14.3,<3.15"
 
 [pypi-dependencies]
-adbc-drivers-dev = { git = "https://github.com/adbc-drivers/dev" }
+adbc-drivers-dev = { git = "https://github.com/adbc-drivers/dev", rev = "dependencies-windows" }
 adbc-drivers-validation = { git = "https://github.com/adbc-drivers/validation" }
