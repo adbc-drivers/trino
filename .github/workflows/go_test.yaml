@@ -122,7 +122,6 @@ jobs:
         run: |
           which gcc
           echo "CC: ${CC:-}"
-          which "${CC}"
           ls /clangarm64/bin/
           export CC=/clangarm64/bin/gcc
 
