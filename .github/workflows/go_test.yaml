@@ -113,6 +113,7 @@ jobs:
 
       - name: Build Library
         working-directory: go
+        shell: msys2 {0}
         run: |
           if [[ -f ci/scripts/pre-build.sh ]]; then
             ./ci/scripts/pre-build.sh release ${{ matrix.platform }} ${{ matrix.arch }}
