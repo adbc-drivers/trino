@@ -52,7 +52,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-hbd8a1cb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-8_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
-      - pypi: git+https://github.com/adbc-drivers/dev#0cbb5bd09379a0016368b2c544fcfeeb817d0aed
+      - pypi: git+https://github.com/adbc-drivers/dev#e97f2b6b3440252b50e47ce7d3775a304eac058f
       - pypi: git+https://github.com/adbc-drivers/validation#6173103cea18a6357a284ef42c203f0f97df993c
       - pypi: https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
@@ -108,7 +108,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-hbd8a1cb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-8_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
-      - pypi: git+https://github.com/adbc-drivers/dev#0cbb5bd09379a0016368b2c544fcfeeb817d0aed
+      - pypi: git+https://github.com/adbc-drivers/dev#e97f2b6b3440252b50e47ce7d3775a304eac058f
       - pypi: git+https://github.com/adbc-drivers/validation#6173103cea18a6357a284ef42c203f0f97df993c
       - pypi: https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
@@ -160,7 +160,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/readline-8.3-h46df422_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hd3d0363_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
-      - pypi: git+https://github.com/adbc-drivers/dev#0cbb5bd09379a0016368b2c544fcfeeb817d0aed
+      - pypi: git+https://github.com/adbc-drivers/dev#e97f2b6b3440252b50e47ce7d3775a304eac058f
       - pypi: git+https://github.com/adbc-drivers/validation#6173103cea18a6357a284ef42c203f0f97df993c
       - pypi: https://files.pythonhosted.org/packages/04/34/f25c6ec3e96b6be8fd35b4a71ea93d64e91ed2e63498bdfd33a4ca5065bb/whenever-0.10.3-cp314-cp314-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl
@@ -213,7 +213,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
-      - pypi: git+https://github.com/adbc-drivers/dev#0cbb5bd09379a0016368b2c544fcfeeb817d0aed
+      - pypi: git+https://github.com/adbc-drivers/dev#e97f2b6b3440252b50e47ce7d3775a304eac058f
       - pypi: git+https://github.com/adbc-drivers/validation#6173103cea18a6357a284ef42c203f0f97df993c
       - pypi: https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl
@@ -1289,7 +1289,7 @@ packages:
     - zstd >=1.5.7,<1.6.0a0
   size: 388453
   timestamp: 1764777142545
-- pypi: git+https://github.com/adbc-drivers/dev#0cbb5bd09379a0016368b2c544fcfeeb817d0aed
+- pypi: git+https://github.com/adbc-drivers/dev#e97f2b6b3440252b50e47ce7d3775a304eac058f
   name: adbc-drivers-dev
   version: '0.1'
   requires_dist:
