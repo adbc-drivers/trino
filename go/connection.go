@@ -49,6 +49,17 @@ var _ driverbase.DbObjectsEnumerator = (*trinoConnectionImpl)(nil)
 // implements CurrentNameSpacer interface
 var _ driverbase.CurrentNamespacer = (*trinoConnectionImpl)(nil)
 
+// SetAutocommit implements driverbase.AutocommitSetter.
+//
+// Transactions are not supported by this driver. Keep the connection in
+// autocommit mode and report disabling it as unsupported.
+func (c *trinoConnectionImpl) SetAutocommit(ctx context.Context, enabled bool) error {
+	if enabled {
+		return nil
+	}
+	return c.ErrorHelper.NotImplemented("cannot disable autocommit: transactions are not supported")
+}
+
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) GetCurrentCatalog(ctx context.Context) (string, error) {
 	var catalog string
