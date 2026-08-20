@@ -45,7 +45,7 @@ type trinoTypeConverter struct {
 const vendorName = "Trino"
 
 var typeConverter = &trinoTypeConverter{
-	DefaultTypeConverter: sqlwrapper.DefaultTypeConverter{VendorName: vendorName},
+	VendorName: vendorName,
 }
 
 // ConvertRawColumnType implements TypeConverter with Trino-specific enhancements
