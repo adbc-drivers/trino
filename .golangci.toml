@@ -35,3 +35,18 @@ enable = [
   "staticcheck",
   "unused",
 ]
+
+[linters.settings.govet]
+# appears to be broken in go 1.27
+disable = ["inline"]
+
+[linters.settings.staticcheck]
+checks = [
+  "all",
+  # rather annoying rules that are new as of golangci-lint 2.13.0 or so
+  "-ST1000",
+  "-ST1003",
+  "-ST1020",
+  # https://github.com/golangci/golangci-lint/issues/6732
+  "-SA4023",
+]
