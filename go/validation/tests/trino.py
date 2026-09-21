@@ -29,7 +29,7 @@ class TrinoQuirks(model.DriverQuirks):
         connection_get_table_schema=True,
         connection_set_current_catalog=True,
         connection_set_current_schema=True,
-        connection_transactions=False,
+        connection_transactions=True,
         get_objects=True,
         get_objects_constraints_foreign=False,
         get_objects_constraints_primary=False,

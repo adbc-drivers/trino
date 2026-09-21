@@ -36,14 +36,14 @@
    For HTTP:
 
    ```shell
-   export TRINO_DSN="http://test@localhost:8080?catalog=memory&schema=default"
+   export TRINO_DSN="http://test@localhost:8080?catalog=memory&schema=default&timezone=UTC"
    ```
 
    For the local HTTPS setup with the self-signed test CA, switch `TRINO_PORT`
    to `8443`, `TRINO_SSL_MODE` to `https`, and use:
 
    ```shell
-   export TRINO_DSN="https://test@localhost:8443?catalog=memory&schema=default&SSLCertPath=/path/to/ci/docker/certs/ca.crt"
+   export TRINO_DSN="https://test@localhost:8443?catalog=memory&schema=default&SSLCertPath=/path/to/ci/docker/certs/ca.crt&timezone=UTC"
    ```
 
    `TRINO_DSN` is used by the general validation suite. The URI-focused tests in

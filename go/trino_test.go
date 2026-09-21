@@ -237,7 +237,7 @@ func (q *TrinoQuirks) SupportsExecuteSchema() bool                 { return fals
 func (q *TrinoQuirks) SupportsGetSetOptions() bool                 { return true }
 func (q *TrinoQuirks) SupportsPartitionedData() bool               { return false }
 func (q *TrinoQuirks) SupportsStatistics() bool                    { return true }
-func (q *TrinoQuirks) SupportsTransactions() bool                  { return false }
+func (q *TrinoQuirks) SupportsTransactions() bool                  { return true }
 func (q *TrinoQuirks) SupportsGetParameterSchema() bool            { return false }
 func (q *TrinoQuirks) SupportsDynamicParameterBinding() bool       { return false }
 func (q *TrinoQuirks) SupportsErrorIngestIncompatibleSchema() bool { return false }
