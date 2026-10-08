@@ -52,7 +52,7 @@ var _ driverbase.CurrentNamespacer = (*trinoConnectionImpl)(nil)
 // GetCurrentCatalog implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) GetCurrentCatalog(ctx context.Context) (string, error) {
 	var catalog string
-	err := c.Db.QueryRowContext(ctx, "SELECT current_catalog").Scan(&catalog)
+	err := c.Conn.QueryRowContext(ctx, "SELECT current_catalog").Scan(&catalog)
 	if err != nil {
 		return "", c.ErrorHelper.WrapIO(err, "failed to get current catalog")
 	}
@@ -62,7 +62,7 @@ func (c *trinoConnectionImpl) GetCurrentCatalog(ctx context.Context) (string, er
 // GetCurrentDbSchema implements driverbase.CurrentNamespacer.
 func (c *trinoConnectionImpl) GetCurrentDbSchema(ctx context.Context) (string, error) {
 	var schema string
-	err := c.Db.QueryRowContext(ctx, "SELECT current_schema").Scan(&schema)
+	err := c.Conn.QueryRowContext(ctx, "SELECT current_schema").Scan(&schema)
 	if err != nil {
 		return "", c.ErrorHelper.WrapIO(err, "failed to get current schema")
 	}
@@ -74,7 +74,7 @@ func (c *trinoConnectionImpl) SetCurrentCatalog(ctx context.Context, catalog str
 	if catalog == "" {
 		return nil // No-op for empty catalog
 	}
-	_, err := c.Db.ExecContext(ctx, "USE "+quoteIdentifier(catalog)+".information_schema")
+	_, err := c.Conn.ExecContext(ctx, "USE "+quoteIdentifier(catalog)+".information_schema")
 	return c.ErrorHelper.WrapInvalidArgument(err, "failed to set current catalog to %s", catalog)
 }
 
@@ -83,7 +83,7 @@ func (c *trinoConnectionImpl) SetCurrentDbSchema(ctx context.Context, schema str
 	if schema == "" {
 		return nil // No-op for empty schema
 	}
-	_, err := c.Db.ExecContext(ctx, "USE "+quoteIdentifier(schema))
+	_, err := c.Conn.ExecContext(ctx, "USE "+quoteIdentifier(schema))
 	return c.ErrorHelper.WrapInvalidArgument(err, "failed to set current schema to %s", schema)
 }
 

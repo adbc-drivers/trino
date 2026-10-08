@@ -19,9 +19,11 @@ import pytest
 def test_package() -> None:
     # Just ensure the driver itself loads
     uri = "trino://localhost:1234"
-    with pytest.raises(adbc_driver_manager.dbapi.Error, match="query failed"):
-        with adbc_driver_manager.dbapi.connect(
+    with (
+        pytest.raises(adbc_driver_manager.dbapi.Error, match="query failed"),
+        adbc_driver_manager.dbapi.connect(
             driver="trino", uri=uri, autocommit=True
-        ) as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT 1")
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")

@@ -69,18 +69,11 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 // registerCustomClientForTimeout creates and registers a custom HTTP client
 // This prevents infrastructure/network timeouts during long-running queries
 func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string) (string, error) {
-	// Parse DSN URL to check for SSLVerification parameter
-	// Note: Must use url.Parse since SSLVerification parameter does not exist in trino.ParseDSN
-	parsedURL, err := url.Parse(dsn)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse DSN URL: %v", err)
-	}
-	skipVerification := strings.EqualFold(parsedURL.Query().Get("SSLVerification"), "NONE")
-
 	cfg, err := trino.ParseDSN(dsn)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse DSN: %v", err)
 	}
+	skipVerification := cfg.SSLVerification == trino.SSLVerificationNone
 
 	timeout := trino.DefaultQueryTimeout
 	if cfg.QueryTimeout != nil {
@@ -114,6 +107,7 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string) (string, err
 	// The custom HTTP client now owns TLS verification/trust configuration.
 	cfg.SSLCertPath = ""
 	cfg.SSLCert = ""
+	cfg.SSLVerification = ""
 
 	return cfg.FormatDSN()
 }
