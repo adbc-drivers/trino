@@ -38,20 +38,22 @@ def test_username_uri(
         (parsed.scheme, netloc, parsed.path, parsed.params, new_query, parsed.fragment)
     )
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": auth_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT current_catalog, current_schema")
-            catalog, schema = cursor.fetchone()
-            assert catalog == "memory"
-            assert schema == "default"
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": auth_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT current_catalog, current_schema")
+        catalog, schema = cursor.fetchone()
+        assert catalog == "memory"
+        assert schema == "default"
 
-            cursor.execute("SHOW SESSION LIKE 'task_concurrency'")
-            row = cursor.fetchone()
-            value = row[1]
-            assert value == "2"
+        cursor.execute("SHOW SESSION LIKE 'task_concurrency'")
+        row = cursor.fetchone()
+        value = row[1]
+        assert value == "2"
 
 
 def test_username_options(
@@ -65,12 +67,14 @@ def test_username_options(
         "uri": uri,
         "username": trino_username,
     }
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs=params,
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs=params,
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
 
 
 @pytest.mark.parametrize("ssl_mode", ["trusted_ca", "skip_verification", "plain_http"])
@@ -121,14 +125,16 @@ def test_ssl_modes(
         )
     )
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": ssl_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            result = cursor.fetchone()
-            assert result[0] == 1
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": ssl_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
+        assert result[0] == 1
 
 
 def test_uri_catalog_schema_parsing(
@@ -146,15 +152,17 @@ def test_uri_catalog_schema_parsing(
         f"/memory/test_schema?{trino_uri_query}"
     )
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": full_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT current_catalog, current_schema")
-            result = cursor.fetchone()
-            assert result[0] == "memory"
-            assert result[1] == "test_schema"
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": full_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT current_catalog, current_schema")
+        result = cursor.fetchone()
+        assert result[0] == "memory"
+        assert result[1] == "test_schema"
 
 
 def test_uri_catalog_only(
@@ -171,14 +179,16 @@ def test_uri_catalog_only(
         f"trino://{trino_username}@{trino_host}:{trino_port}/memory?{trino_uri_query}"
     )
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": catalog_only_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT current_catalog")
-            result = cursor.fetchone()
-            assert result[0] == "memory"
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": catalog_only_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT current_catalog")
+        result = cursor.fetchone()
+        assert result[0] == "memory"
 
 
 def test_ipv6_host_support(
@@ -200,13 +210,15 @@ def test_ipv6_host_support(
         f"?{trino_uri_query}"
     )
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": ipv6_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            assert cursor.fetchone()[0] == 1
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": ipv6_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
+        assert cursor.fetchone()[0] == 1
 
 
 def test_url_encoded_catalog_schema(
@@ -224,15 +236,17 @@ def test_url_encoded_catalog_schema(
         f"/my%20catalog/my%20schema?{trino_uri_query}"
     )
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": encoded_uri},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT current_catalog, current_schema")
-            result = cursor.fetchone()
-            assert result[0] == "my catalog"
-            assert result[1] == "my schema"
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": encoded_uri},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT current_catalog, current_schema")
+        result = cursor.fetchone()
+        assert result[0] == "my catalog"
+        assert result[1] == "my schema"
 
 
 def test_missing_uri_raises_error(
@@ -240,15 +254,17 @@ def test_missing_uri_raises_error(
     driver_path: str,
 ) -> None:
     """Tests that connecting without a 'uri' option raises an error."""
-    with pytest.raises(
-        adbc_driver_manager.dbapi.ProgrammingError,
-        match="missing required option uri",
-    ):
-        with adbc_driver_manager.dbapi.connect(
+    with (
+        pytest.raises(
+            adbc_driver_manager.dbapi.ProgrammingError,
+            match="missing required option uri",
+        ),
+        adbc_driver_manager.dbapi.connect(
             driver=driver_path,
             db_kwargs={},
-        ):
-            pass
+        ),
+    ):
+        pass
 
 
 def test_invalid_uri_format(
@@ -256,15 +272,17 @@ def test_invalid_uri_format(
     driver_path: str,
 ) -> None:
     """Tests that a malformed URI raises a helpful error."""
-    with pytest.raises(
-        adbc_driver_manager.dbapi.ProgrammingError,
-        match="invalid Trino URI format",
-    ):
-        with adbc_driver_manager.dbapi.connect(
+    with (
+        pytest.raises(
+            adbc_driver_manager.dbapi.ProgrammingError,
+            match="invalid Trino URI format",
+        ),
+        adbc_driver_manager.dbapi.connect(
             driver=driver_path,
             db_kwargs={"uri": "trino://[invalid-format"},
-        ):
-            pass
+        ),
+    ):
+        pass
 
 
 # --- DSN tests ---
@@ -298,23 +316,23 @@ def test_basic_dsn_connection(
         )
     )
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={"uri": modified_dsn},
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SHOW SESSION LIKE 'task_concurrency'")
-            row = cursor.fetchone()
-            assert row is not None, (
-                "Expected session property 'task_concurrency' to be set"
-            )
-            assert row[0] == "task_concurrency"
-            assert row[1] == "2"
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": modified_dsn},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SHOW SESSION LIKE 'task_concurrency'")
+        row = cursor.fetchone()
+        assert row is not None, "Expected session property 'task_concurrency' to be set"
+        assert row[0] == "task_concurrency"
+        assert row[1] == "2"
 
-            cursor.execute("SELECT current_catalog, current_schema")
-            catalog, schema = cursor.fetchone()
-            assert catalog == "memory", f"Expected catalog=memory, got {catalog}"
-            assert schema == "default", f"Expected schema=default, got {schema}"
+        cursor.execute("SELECT current_catalog, current_schema")
+        catalog, schema = cursor.fetchone()
+        assert catalog == "memory", f"Expected catalog=memory, got {catalog}"
+        assert schema == "default", f"Expected schema=default, got {schema}"
 
 
 def test_plain_host_with_username_options(
@@ -339,13 +357,15 @@ def test_plain_host_with_username_options(
 
     query = urllib.parse.urlencode(query_params)
 
-    with adbc_driver_manager.dbapi.connect(
-        driver=driver_path,
-        db_kwargs={
-            "uri": f"{trino_host}:{trino_port}?{query}",
-            "username": trino_username,
-        },
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            assert cursor.fetchone()[0] == 1
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={
+                "uri": f"{trino_host}:{trino_port}?{query}",
+                "username": trino_username,
+            },
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
+        assert cursor.fetchone()[0] == 1

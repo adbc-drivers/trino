@@ -39,10 +39,8 @@ To use the driver, provide a Trino connection string as the `uri` option. The dr
 from adbc_driver_manager import dbapi
 
 dbapi.connect(
-  driver="trino",
-  db_kwargs={
-      "uri": "http://user@localhost:8080?catalog=tcph&schema=tiny"
-  }
+    driver="trino",
+    db_kwargs={"uri": "http://user@localhost:8080?catalog=tcph&schema=tiny"},
 )
 ```
 

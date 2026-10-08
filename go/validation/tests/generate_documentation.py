@@ -15,7 +15,7 @@
 import argparse
 from pathlib import Path
 
-import adbc_drivers_validation.generate_documentation as generate_documentation
+from adbc_drivers_validation import generate_documentation
 
 from . import trino
 
