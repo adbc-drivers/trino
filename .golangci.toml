@@ -35,3 +35,7 @@ enable = [
   "staticcheck",
   "unused",
 ]
+
+[linters.settings.govet]
+# appears to be broken in go 1.27
+disable = ["inline"]
