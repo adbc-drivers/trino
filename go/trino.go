@@ -16,6 +16,7 @@ package trino
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"math/big"
@@ -151,22 +152,30 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 	return m.DefaultTypeConverter.ConvertRawColumnType(colType)
 }
 
+// Integer arrays keep their int64 Arrow representation even when the client
+// reports sql.NullInt32 for TINYINT, SMALLINT and INTEGER elements.
 var scanTypeToListMap = map[reflect.Type]arrow.DataType{
-	reflect.TypeFor[trino.NullSliceString]():   arrow.ListOf(arrow.BinaryTypes.String),
-	reflect.TypeFor[trino.NullSliceInt64]():    arrow.ListOf(arrow.PrimitiveTypes.Int64),
-	reflect.TypeFor[trino.NullSliceFloat64]():  arrow.ListOf(arrow.PrimitiveTypes.Float64),
-	reflect.TypeFor[trino.NullSliceBool]():     arrow.ListOf(arrow.FixedWidthTypes.Boolean),
-	reflect.TypeFor[trino.NullSliceTime]():     arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}),
-	reflect.TypeFor[trino.NullSlice2String]():  arrow.ListOf(arrow.ListOf(arrow.BinaryTypes.String)),
-	reflect.TypeFor[trino.NullSlice2Int64]():   arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Int64)),
-	reflect.TypeFor[trino.NullSlice2Float64](): arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Float64)),
-	reflect.TypeFor[trino.NullSlice2Bool]():    arrow.ListOf(arrow.ListOf(arrow.FixedWidthTypes.Boolean)),
-	reflect.TypeFor[trino.NullSlice2Time]():    arrow.ListOf(arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"})),
-	reflect.TypeFor[trino.NullSlice3String]():  arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.BinaryTypes.String))),
-	reflect.TypeFor[trino.NullSlice3Int64]():   arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Int64))),
-	reflect.TypeFor[trino.NullSlice3Float64](): arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Float64))),
-	reflect.TypeFor[trino.NullSlice3Bool]():    arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.FixedWidthTypes.Boolean))),
-	reflect.TypeFor[trino.NullSlice3Time]():    arrow.ListOf(arrow.ListOf(arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}))),
+	reflect.TypeFor[trino.NullSlice[sql.NullString]]():                                    arrow.ListOf(arrow.BinaryTypes.String),
+	reflect.TypeFor[trino.NullSlice[sql.NullInt32]]():                                     arrow.ListOf(arrow.PrimitiveTypes.Int64),
+	reflect.TypeFor[trino.NullSlice[sql.NullInt64]]():                                     arrow.ListOf(arrow.PrimitiveTypes.Int64),
+	reflect.TypeFor[trino.NullSlice[sql.NullFloat64]]():                                   arrow.ListOf(arrow.PrimitiveTypes.Float64),
+	reflect.TypeFor[trino.NullSlice[sql.NullBool]]():                                      arrow.ListOf(arrow.FixedWidthTypes.Boolean),
+	reflect.TypeFor[trino.NullSlice[sql.NullTime]]():                                      arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}),
+	reflect.TypeFor[trino.NullSlice[[]byte]]():                                            arrow.ListOf(arrow.BinaryTypes.Binary),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[sql.NullString]]]():                   arrow.ListOf(arrow.ListOf(arrow.BinaryTypes.String)),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[sql.NullInt32]]]():                    arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Int64)),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[sql.NullInt64]]]():                    arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Int64)),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[sql.NullFloat64]]]():                  arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Float64)),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[sql.NullBool]]]():                     arrow.ListOf(arrow.ListOf(arrow.FixedWidthTypes.Boolean)),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[sql.NullTime]]]():                     arrow.ListOf(arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"})),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[[]byte]]]():                           arrow.ListOf(arrow.ListOf(arrow.BinaryTypes.Binary)),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[trino.NullSlice[sql.NullString]]]]():  arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.BinaryTypes.String))),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[trino.NullSlice[sql.NullInt32]]]]():   arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Int64))),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[trino.NullSlice[sql.NullInt64]]]]():   arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Int64))),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[trino.NullSlice[sql.NullFloat64]]]](): arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Float64))),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[trino.NullSlice[sql.NullBool]]]]():    arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.FixedWidthTypes.Boolean))),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[trino.NullSlice[sql.NullTime]]]]():    arrow.ListOf(arrow.ListOf(arrow.ListOf(&arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}))),
+	reflect.TypeFor[trino.NullSlice[trino.NullSlice[trino.NullSlice[[]byte]]]]():          arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.BinaryTypes.Binary))),
 }
 
 func convertPrecisionToTimeUnit(precision int64) arrow.TimeUnit {
