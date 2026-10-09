@@ -57,7 +57,7 @@ repos:
   - id: trailing-whitespace
 
 - repo: https://github.com/adbc-drivers/dev
-  rev: fb5949cf040cee7fd9c9189dc3ac684f656a597a
+  rev: 1c81e4c7cf606de1df44081f394934634a701428
   hooks:
   - id: rat
 

@@ -14,18 +14,18 @@
 
 module github.com/adbc-drivers/trino
 
-go 1.27.1
+go 1.27.2
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20260918204134-e2d9003fac22
-	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20260918204134-e2d9003fac22
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20261008155521-bb49cea59efb
+	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20261008155521-bb49cea59efb
 	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20260621223149-c33f25554eb6
 	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260621223149-c33f25554eb6
 	github.com/apache/arrow-adbc/go/adbc v1.12.0
 	github.com/apache/arrow-go/v18 v18.8.0
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.12.1
-	github.com/trinodb/trino-go-client v1.2.0
+	github.com/trinodb/trino-go-client v1.3.0
 )
 
 require (
@@ -61,13 +61,13 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20261007192929-f45ad48fbe92 // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
