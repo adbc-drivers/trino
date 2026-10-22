@@ -105,6 +105,10 @@ The driver also supports the Trino DSN format (see [Go Trino Client documentatio
 
 {{ types|safe }}
 
+Year/month and day/time intervals, including parameterized interval types, are
+returned as Arrow month-day-nanosecond intervals. Fractional seconds beyond nine
+digits are truncated to nanoseconds.
+
 ## Options
 
 `trino.statement.last_query_id`
