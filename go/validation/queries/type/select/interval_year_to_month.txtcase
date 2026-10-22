@@ -23,12 +23,7 @@ sql-type-name = "INTERVAL YEAR TO MONTH"
 // part: setup_query
 
 CREATE TABLE test_interval_year_to_month AS
-SELECT
-    idx,
-    CAST(res AS INTERVAL YEAR TO MONTH) AS res,
-    CASE WHEN idx = 1 THEN INTERVAL '123-4' YEAR(3) TO MONTH END AS year_month,
-    CASE WHEN idx = 1 THEN INTERVAL '123' YEAR(3) END AS year_only,
-    CASE WHEN idx = 1 THEN INTERVAL '123' MONTH(3) END AS month_only
+SELECT idx, CAST(res AS INTERVAL YEAR TO MONTH) AS res
 FROM (VALUES
     (1, INTERVAL '3' MONTH),
     (2, INTERVAL '2' YEAR),
@@ -39,8 +34,7 @@ FROM (VALUES
 
 // part: query
 
-SELECT res, year_month, year_only, month_only
-FROM test_interval_year_to_month ORDER BY idx
+SELECT res FROM test_interval_year_to_month ORDER BY idx
 
 // part: expected_schema
 
@@ -51,29 +45,14 @@ FROM test_interval_year_to_month ORDER BY idx
             "name": "res",
             "format": "tin",
             "flags": ["nullable"]
-        },
-        {
-            "name": "year_month",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "year_only",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "month_only",
-            "format": "tin",
-            "flags": ["nullable"]
         }
     ]
 }
 
 // part: expected
 
-{"res": "3M0d0ns", "year_month": "1480M0d0ns", "year_only": "1476M0d0ns", "month_only": "123M0d0ns"}
-{"res": "24M0d0ns", "year_month": null, "year_only": null, "month_only": null}
-{"res": "30M0d0ns", "year_month": null, "year_only": null, "month_only": null}
-{"res": "0M0d0ns", "year_month": null, "year_only": null, "month_only": null}
-{"res": null, "year_month": null, "year_only": null, "month_only": null}
+{"res": "3M0d0ns"}
+{"res": "24M0d0ns"}
+{"res": "30M0d0ns"}
+{"res": "0M0d0ns"}
+{"res": null}

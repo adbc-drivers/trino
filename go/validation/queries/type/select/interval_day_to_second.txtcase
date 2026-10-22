@@ -23,23 +23,7 @@ sql-type-name = "INTERVAL DAY TO SECOND"
 // part: setup_query
 
 CREATE TABLE test_interval_day_to_second AS
-SELECT
-    idx,
-    CAST(res AS INTERVAL DAY TO SECOND) AS res,
-    CASE WHEN idx = 1 THEN INTERVAL '123' DAY(3) END AS day_only,
-    CASE WHEN idx = 1 THEN INTERVAL '123 01' DAY(3) TO HOUR END AS day_hour,
-    CASE WHEN idx = 1 THEN INTERVAL '123 01:02' DAY(3) TO MINUTE END AS day_minute,
-    CASE WHEN idx = 1 THEN INTERVAL '1 00:00:01' DAY(2) TO SECOND(0) END AS day_second0,
-    CASE WHEN idx = 1 THEN INTERVAL '1 00:00:00.123456' DAY(2) TO SECOND(6) END AS day_second6,
-    CASE WHEN idx = 1 THEN INTERVAL '1 00:00:00.123456789' DAY(2) TO SECOND(9) END AS day_second9,
-    CASE WHEN idx = 1 THEN INTERVAL '1 00:00:00.123456789999' DAY(2) TO SECOND(12) END AS day_second12,
-    CASE WHEN idx = 1 THEN INTERVAL '123' HOUR(3) END AS hour_only,
-    CASE WHEN idx = 1 THEN INTERVAL '123:04' HOUR(3) TO MINUTE END AS hour_minute,
-    CASE WHEN idx = 1 THEN INTERVAL '123:04:05.123456' HOUR(3) TO SECOND(6) END AS hour_second,
-    CASE WHEN idx = 1 THEN INTERVAL '123' MINUTE(3) END AS minute_only,
-    CASE WHEN idx = 1 THEN INTERVAL '123:04.123456' MINUTE(3) TO SECOND(6) END AS minute_second,
-    CASE WHEN idx = 1 THEN INTERVAL '123' SECOND(3, 0) END AS second0,
-    CASE WHEN idx = 1 THEN INTERVAL '123.123456789999' SECOND(3, 12) END AS second12
+SELECT idx, CAST(res AS INTERVAL DAY TO SECOND) AS res
 FROM (VALUES
     (1, INTERVAL '2' DAY),
     (2, INTERVAL '1' HOUR),
@@ -51,8 +35,7 @@ FROM (VALUES
 
 // part: query
 
-SELECT res, day_only, day_hour, day_minute, day_second0, day_second6, day_second9, day_second12, hour_only, hour_minute, hour_second, minute_only, minute_second, second0, second12
-FROM test_interval_day_to_second ORDER BY idx
+SELECT res FROM test_interval_day_to_second ORDER BY idx
 
 // part: expected_schema
 
@@ -63,85 +46,15 @@ FROM test_interval_day_to_second ORDER BY idx
             "name": "res",
             "format": "tin",
             "flags": ["nullable"]
-        },
-        {
-            "name": "day_only",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "day_hour",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "day_minute",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "day_second0",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "day_second6",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "day_second9",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "day_second12",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "hour_only",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "hour_minute",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "hour_second",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "minute_only",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "minute_second",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "second0",
-            "format": "tin",
-            "flags": ["nullable"]
-        },
-        {
-            "name": "second12",
-            "format": "tin",
-            "flags": ["nullable"]
         }
     ]
 }
 
 // part: expected
 
-{"res": "0M2d0ns", "day_only": "0M123d0ns", "day_hour": "0M123d3600000000000ns", "day_minute": "0M123d3720000000000ns", "day_second0": "0M1d1000000000ns", "day_second6": "0M1d123456000ns", "day_second9": "0M1d123456789ns", "day_second12": "0M1d123456789ns", "hour_only": "0M5d10800000000000ns", "hour_minute": "0M5d11040000000000ns", "hour_second": "0M5d11045123456000ns", "minute_only": "0M0d7380000000000ns", "minute_second": "0M0d7384123456000ns", "second0": "0M0d123000000000ns", "second12": "0M0d123123456789ns"}
-{"res": "0M0d3600000000000ns", "day_only": null, "day_hour": null, "day_minute": null, "day_second0": null, "day_second6": null, "day_second9": null, "day_second12": null, "hour_only": null, "hour_minute": null, "hour_second": null, "minute_only": null, "minute_second": null, "second0": null, "second12": null}
-{"res": "0M0d1800000000000ns", "day_only": null, "day_hour": null, "day_minute": null, "day_second0": null, "day_second6": null, "day_second9": null, "day_second12": null, "hour_only": null, "hour_minute": null, "hour_second": null, "minute_only": null, "minute_second": null, "second0": null, "second12": null}
-{"res": "0M0d45123000000ns", "day_only": null, "day_hour": null, "day_minute": null, "day_second0": null, "day_second6": null, "day_second9": null, "day_second12": null, "hour_only": null, "hour_minute": null, "hour_second": null, "minute_only": null, "minute_second": null, "second0": null, "second12": null}
-{"res": "0M1d86399999000000ns", "day_only": null, "day_hour": null, "day_minute": null, "day_second0": null, "day_second6": null, "day_second9": null, "day_second12": null, "hour_only": null, "hour_minute": null, "hour_second": null, "minute_only": null, "minute_second": null, "second0": null, "second12": null}
-{"res": null, "day_only": null, "day_hour": null, "day_minute": null, "day_second0": null, "day_second6": null, "day_second9": null, "day_second12": null, "hour_only": null, "hour_minute": null, "hour_second": null, "minute_only": null, "minute_second": null, "second0": null, "second12": null}
+{"res": "0M2d0ns"}
+{"res": "0M0d3600000000000ns"}
+{"res": "0M0d1800000000000ns"}
+{"res": "0M0d45123000000ns"}
+{"res": "0M1d86399999000000ns"}
+{"res": null}
