@@ -1,0 +1,79 @@
+// Copyright (c) 2025-2026 ADBC Drivers Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//         http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// part: metadata
+
+[setup]
+drop = "test_interval_year_to_month"
+
+[tags]
+sql-type-name = "INTERVAL YEAR TO MONTH"
+
+// part: setup_query
+
+CREATE TABLE test_interval_year_to_month AS
+SELECT
+    idx,
+    CAST(res AS INTERVAL YEAR TO MONTH) AS res,
+    CASE WHEN idx = 1 THEN INTERVAL '123-4' YEAR(3) TO MONTH END AS year_month,
+    CASE WHEN idx = 1 THEN INTERVAL '123' YEAR(3) END AS year_only,
+    CASE WHEN idx = 1 THEN INTERVAL '123' MONTH(3) END AS month_only
+FROM (VALUES
+    (1, INTERVAL '3' MONTH),
+    (2, INTERVAL '2' YEAR),
+    (3, INTERVAL '2-6' YEAR TO MONTH),
+    (4, INTERVAL '0-0' YEAR TO MONTH),
+    (5, NULL)
+) AS intervals(idx, res)
+
+// part: query
+
+SELECT res, year_month, year_only, month_only
+FROM test_interval_year_to_month ORDER BY idx
+
+// part: expected_schema
+
+{
+    "format": "+s",
+    "children": [
+        {
+            "name": "res",
+            "format": "tin",
+            "flags": ["nullable"]
+        },
+        {
+            "name": "year_month",
+            "format": "tin",
+            "flags": ["nullable"]
+        },
+        {
+            "name": "year_only",
+            "format": "tin",
+            "flags": ["nullable"]
+        },
+        {
+            "name": "month_only",
+            "format": "tin",
+            "flags": ["nullable"]
+        }
+    ]
+}
+
+// part: expected
+
+{"res": "3M0d0ns", "year_month": "1480M0d0ns", "year_only": "1476M0d0ns", "month_only": "123M0d0ns"}
+{"res": "24M0d0ns", "year_month": null, "year_only": null, "month_only": null}
+{"res": "30M0d0ns", "year_month": null, "year_only": null, "month_only": null}
+{"res": "0M0d0ns", "year_month": null, "year_only": null, "month_only": null}
+{"res": null, "year_month": null, "year_only": null, "month_only": null}
