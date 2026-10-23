@@ -107,6 +107,11 @@ The driver also supports the Trino DSN format (see [Go Trino Client documentatio
 
 ## Options
 
+`trino.session_user`, `trino.impersonation_user`
+: **Type:** string.
+
+  Impersonate a different user (run queries as that user) while logging in as the specified user. If both options are provided, it is not specified which one will be followed.
+
 `trino.statement.last_query_id`
 : **Read-only.** **Type:** string.
 
