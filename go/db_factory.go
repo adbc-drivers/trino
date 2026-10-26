@@ -41,6 +41,21 @@ type customClientRegistration struct {
 	registered bool
 }
 
+type sessionUserTransport struct {
+	base        http.RoundTripper
+	scheme      string
+	host        string
+	sessionUser string
+}
+
+func (t *sessionUserTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Scheme == t.scheme && req.URL.Host == t.host {
+		req = req.Clone(req.Context())
+		req.Header.Set("X-Trino-User", t.sessionUser)
+	}
+	return t.base.RoundTrip(req)
+}
+
 var (
 	customClientRegistrations sync.Map
 )
@@ -58,7 +73,7 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 	}
 
 	// Register custom HTTP client to prevent infrastructure timeouts
-	dsn, err = f.registerCustomClientForTimeout(dsn)
+	dsn, err = f.registerCustomClientForTimeout(dsn, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +83,7 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 
 // registerCustomClientForTimeout creates and registers a custom HTTP client
 // This prevents infrastructure/network timeouts during long-running queries
-func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string) (string, error) {
+func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[string]string) (string, error) {
 	cfg, err := trino.ParseDSN(dsn)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse DSN: %v", err)
@@ -98,6 +113,28 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string) (string, err
 	customClient := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
+	}
+	var sessionUser string
+	var hasSessionUser bool
+	for key, value := range opts {
+		switch key {
+		case "trino.session_user", "trino.impersonation_user":
+			sessionUser = value
+			hasSessionUser = true
+		}
+	}
+	if hasSessionUser {
+		serverURL, err := url.Parse(cfg.ServerURI)
+		if err != nil {
+			return "", fmt.Errorf("could not parse Trino server URI: %w", err)
+		}
+		customClient.Transport = &sessionUserTransport{
+			base:        transport,
+			scheme:      serverURL.Scheme,
+			host:        serverURL.Host,
+			sessionUser: sessionUser,
+		}
+		httpClientName += fmt.Sprintf("|scheme=%q|host=%q|session_user=%q", serverURL.Scheme, serverURL.Host, sessionUser)
 	}
 	if err := ensureCustomClientRegistered(httpClientName, customClient); err != nil {
 		return "", fmt.Errorf("failed to register custom HTTP client: %v", err)

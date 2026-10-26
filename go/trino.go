@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -49,10 +50,32 @@ var typeConverter = &trinoTypeConverter{
 	VendorName: vendorName,
 }
 
+var intervalPrecisionPattern = regexp.MustCompile(`\([0-9]+(?:,\s*[0-9]+)?\)`)
+
+// intervalTypeFamily recognizes both legacy and parametric interval qualifiers.
+// Keep the original database type name in field metadata, including precision.
+func intervalTypeFamily(typeName string) string {
+	typeName = strings.ToUpper(typeName)
+	if !strings.HasPrefix(typeName, "INTERVAL ") {
+		return typeName
+	}
+	qualifier := intervalPrecisionPattern.ReplaceAllString(typeName, "")
+	switch qualifier {
+	case "INTERVAL YEAR", "INTERVAL MONTH", "INTERVAL YEAR TO MONTH":
+		return "INTERVAL YEAR TO MONTH"
+	case "INTERVAL DAY", "INTERVAL HOUR", "INTERVAL MINUTE", "INTERVAL SECOND",
+		"INTERVAL DAY TO HOUR", "INTERVAL DAY TO MINUTE", "INTERVAL DAY TO SECOND",
+		"INTERVAL HOUR TO MINUTE", "INTERVAL HOUR TO SECOND", "INTERVAL MINUTE TO SECOND":
+		return "INTERVAL DAY TO SECOND"
+	default:
+		return typeName
+	}
+}
+
 // ConvertRawColumnType implements TypeConverter with Trino-specific enhancements
 func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType) (arrow.DataType, bool, arrow.Metadata, error) {
 	// Handle Trino-specific type mappings first
-	typeName := strings.ToUpper(colType.DatabaseTypeName)
+	typeName := intervalTypeFamily(colType.DatabaseTypeName)
 
 	// trino go client does not provide clean way to get nullability so assume every column is always nullable
 	colType.Nullable = true
@@ -108,10 +131,10 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 			sqlwrapper.MetaKeyColumnName:       colType.Name,
 		}
 
-		if colType.Precision != nil {
-			// precision represents fractional seconds digits for the seconds component
-			precision := *colType.Precision
-			metadataMap[sqlwrapper.MetaKeyFractionalSecondsPrecision] = fmt.Sprintf("%d", precision)
+		if colType.Scale != nil {
+			// The client reports leading-field precision in Precision and
+			// fractional-second precision in Scale for parametric intervals.
+			metadataMap[sqlwrapper.MetaKeyFractionalSecondsPrecision] = fmt.Sprintf("%d", *colType.Scale)
 		}
 
 		metadata := arrow.MetadataFrom(metadataMap)
@@ -218,7 +241,7 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 		if !exists {
 			return nil, fmt.Errorf("no database type name in field metadata for interval type")
 		}
-		switch dbTypeName {
+		switch intervalTypeFamily(dbTypeName) {
 		case "INTERVAL YEAR TO MONTH":
 			return &yearToMonthIntervalInserter{
 				builder: builder.(*array.MonthDayNanoIntervalBuilder),
@@ -487,7 +510,8 @@ func parseDayToSecond(intervalStr string) (arrow.MonthDayNanoInterval, error) {
 	if len(secondsParts) > 1 {
 		// Convert fractional seconds to nanoseconds
 		fracStr := secondsParts[1]
-		// Pad or truncate to 9 digits (nanoseconds)
+		// Pad or truncate to 9 digits (nanoseconds). Trino 484+ supports
+		// picoseconds, but Arrow's interval type only stores nanoseconds.
 		for len(fracStr) < 9 {
 			fracStr += "0"
 		}

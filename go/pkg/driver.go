@@ -237,8 +237,7 @@ func initLoggingFromEnv(db adbc.DatabaseLogging) {
 		logLevel = slog.LevelDebug
 	case "info":
 		logLevel = slog.LevelInfo
-	case "warn":
-	case "warning":
+	case "warn", "warning":
 		logLevel = slog.LevelWarn
 	case "error":
 		logLevel = slog.LevelError
