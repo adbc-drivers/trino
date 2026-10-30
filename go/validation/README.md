@@ -16,7 +16,9 @@
 
 # Validation Suite Setup
 
-1. Start the Docker container:
+Run these commands from the `go/` directory.
+
+1. Start the Docker containers:
 
    ```shell
    docker compose up --detach --wait
@@ -29,7 +31,9 @@
    export TRINO_CATALOG="memory"
    export TRINO_SCHEMA="default"
    export TRINO_SSL_MODE="http"
-   export TRINO_SSL_CERT_PATH="/path/to/ci/docker/certs/ca.crt"
+   export TRINO_SSL_CERT_PATH="${PWD}/ci/docker/certs/ca.crt"
+   export TRINO_SSL_CLIENT_CERT_PATH="${PWD}/ci/docker/certs/client.crt"
+   export TRINO_SSL_CLIENT_KEY_PATH="${PWD}/ci/docker/certs/client.key"
    export TRINO_USERNAME="test"
    ```
 
@@ -39,20 +43,26 @@
    export TRINO_DSN="http://test@localhost:8080?catalog=memory&schema=default&timezone=UTC"
    ```
 
-   For the local HTTPS setup with the self-signed test CA, switch `TRINO_PORT`
-   to `8443`, `TRINO_SSL_MODE` to `https`, and use:
+   The Docker HTTPS endpoint uses certificate authentication. From the `go/`
+   directory, load the server CA, client certificate/key, and connection settings:
 
    ```shell
-   export TRINO_DSN="https://test@localhost:8443?catalog=memory&schema=default&SSLCertPath=/path/to/ci/docker/certs/ca.crt&timezone=UTC"
+   source .env.linux
    ```
 
    `TRINO_DSN` is used by the general validation suite. The URI-focused tests in
    `validation/tests/trino/test_uri.py` build their own connection strings from
    the `TRINO_HOST`, `TRINO_PORT`, `TRINO_CATALOG`, `TRINO_SCHEMA`,
-   `TRINO_SSL_MODE`, `TRINO_SSL_CERT_PATH`, and `TRINO_USERNAME` variables.
-3. Run the tests:
+   `TRINO_SSL_MODE`, `TRINO_SSL_CERT_PATH`, `TRINO_SSL_CLIENT_CERT_PATH`,
+   `TRINO_SSL_CLIENT_KEY_PATH`, and `TRINO_USERNAME` variables.
+
+   `SSLCertPath` verifies the server certificate. `SSLClientCertPath` and
+   `SSLClientKeyPath` authenticate the client. The URI tests exercise file,
+   inline PEM, and mixed credentials, and verify that HTTPS queries fail without
+   a client certificate. Plain HTTP remains available for the HTTP tests.
+3. Build the shared library and run validation from the `go/` directory:
 
    ```shell
-   cd validation
-   pixi run test
+   pixi run make
+   pixi run validate
    ```

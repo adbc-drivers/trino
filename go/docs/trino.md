@@ -84,6 +84,19 @@ When connecting to servers with self-signed certificates or certificates signed 
 
 - `trino://localhost:8443/catalog?SSLVerification=NONE` → Uses HTTPS with certificate verification disabled
 
+For client certificate authentication (mutual TLS), use HTTPS and provide
+`SSLClientCertPath` and `SSLClientKeyPath` pointing to a PEM certificate and its
+private key:
+
+```text
+trino://user@trino.example.com:8443/catalog/schema?SSLClientCertPath=/path/to/client.pem&SSLClientKeyPath=/path/to/client-key.pem
+```
+
+Alternatively, supply PEM contents through `SSLClientCert` and `SSLClientKey`.
+URI-encode inline PEM values. The certificate and key may each be supplied as a
+file or inline value; provide exactly one source for each. Server certificate
+verification still applies. Use `SSLCertPath` or `SSLCert` to trust a private CA.
+
 See [Trino JDBC Documentation](https://trino.io/docs/current/client/jdbc.html#parameter-reference) for complete parameter reference and [Trino Concepts](https://trino.io/docs/current/overview/concepts.html#catalog) for more information.
 
 Examples:

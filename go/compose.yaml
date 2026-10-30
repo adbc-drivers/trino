@@ -52,6 +52,7 @@ services:
       - 8443:8443
     volumes:
       - "./ci/docker/trino/config.properties:/etc/trino/config.properties:ro"
+      - "./ci/docker/trino/access-control.properties:/etc/trino/access-control.properties:ro"
       - "./ci/docker/certs:/etc/trino/certs:ro"
       # Add a second 'memory' catalog named 'secondmemory'
       - "./ci/docker/catalog/secondmemory.properties:/etc/trino/catalog/secondmemory.properties:ro"

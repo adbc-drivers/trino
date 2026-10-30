@@ -16,6 +16,7 @@ package trino
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
@@ -106,10 +107,16 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 		transport.TLSClientConfig = tlsConfig
 	}
 
-	httpClientName := fmt.Sprintf(
-		"timeout=%s|skip_verification=%t|ssl_cert_path=%s|ssl_cert=%s",
-		timeout, skipVerification, cfg.SSLCertPath, cfg.SSLCert,
-	)
+	var httpClientName strings.Builder
+	fmt.Fprintf(&httpClientName, "timeout=%s|skip_verification=%t|ssl_cert_path=%s|ssl_cert=%s",
+		timeout, skipVerification, cfg.SSLCertPath, cfg.SSLCert)
+	if tlsConfig != nil {
+		for _, cert := range tlsConfig.Certificates {
+			for _, der := range cert.Certificate {
+				fmt.Fprintf(&httpClientName, "|ssl_client_cert=%x", sha256.Sum256(der))
+			}
+		}
+	}
 	customClient := &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
@@ -134,16 +141,20 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 			host:        serverURL.Host,
 			sessionUser: sessionUser,
 		}
-		httpClientName += fmt.Sprintf("|scheme=%q|host=%q|session_user=%q", serverURL.Scheme, serverURL.Host, sessionUser)
+		fmt.Fprintf(&httpClientName, "|scheme=%q|host=%q|session_user=%q", serverURL.Scheme, serverURL.Host, sessionUser)
 	}
-	if err := ensureCustomClientRegistered(httpClientName, customClient); err != nil {
+	if err := ensureCustomClientRegistered(httpClientName.String(), customClient); err != nil {
 		return "", fmt.Errorf("failed to register custom HTTP client: %v", err)
 	}
 
-	cfg.CustomClientName = httpClientName
-	// The custom HTTP client now owns TLS verification/trust configuration.
+	cfg.CustomClientName = httpClientName.String()
+	// The custom HTTP client now owns all TLS configuration.
 	cfg.SSLCertPath = ""
 	cfg.SSLCert = ""
+	cfg.SSLClientCertPath = ""
+	cfg.SSLClientCert = ""
+	cfg.SSLClientKeyPath = ""
+	cfg.SSLClientKey = ""
 	cfg.SSLVerification = ""
 
 	return cfg.FormatDSN()
@@ -172,7 +183,23 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 		tlsConfig.RootCAs = certPool
 	}
 
-	if skipVerification || cfg.SSLCert != "" || cfg.SSLCertPath != "" {
+	clientTLSConfig, err := (&trino.Config{
+		SSLClientCertPath: cfg.SSLClientCertPath,
+		SSLClientCert:     cfg.SSLClientCert,
+		SSLClientKeyPath:  cfg.SSLClientKeyPath,
+		SSLClientKey:      cfg.SSLClientKey,
+	}).TLSConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load SSL client certificate: %w", err)
+	}
+	if clientTLSConfig != nil {
+		if !strings.HasPrefix(cfg.ServerURI, "https://") {
+			return nil, fmt.Errorf("SSL must be enabled for client certificate authentication")
+		}
+		tlsConfig.Certificates = clientTLSConfig.Certificates
+	}
+
+	if skipVerification || cfg.SSLCert != "" || cfg.SSLCertPath != "" || clientTLSConfig != nil {
 		return tlsConfig, nil
 	}
 

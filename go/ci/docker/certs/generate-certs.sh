@@ -14,24 +14,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Generate the self-signed CA certificate and PKCS#12 keystore used by the
-# local Trino Docker Compose HTTPS setup.
+# Generate the CA, server keystore, and client certificate/key used by the
+# local Trino Docker Compose certificate authentication setup.
 
 set -eu
 
 CERT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 CA_CONFIG="${CERT_DIR}/openssl-ca.cnf"
 SERVER_CONFIG="${CERT_DIR}/openssl-server.cnf"
+CLIENT_CONFIG="${CERT_DIR}/openssl-client.cnf"
 
 CA_CERT="${CERT_DIR}/ca.crt"
 KEYSTORE="${CERT_DIR}/localhost.p12"
+CLIENT_CERT="${CERT_DIR}/client.crt"
+CLIENT_KEY="${CERT_DIR}/client.key"
 
-if [ -f "${CA_CERT}" ] && [ -f "${KEYSTORE}" ] && [ "${TRINO_FORCE_REGENERATE_CERTS:-0}" != "1" ]; then
+if [ -f "${CA_CERT}" ] && [ -f "${KEYSTORE}" ] && \
+    [ -f "${CLIENT_CERT}" ] && [ -f "${CLIENT_KEY}" ] && \
+    [ "${TRINO_FORCE_REGENERATE_CERTS:-0}" != "1" ]; then
   echo "Trino TLS assets already exist"
   exit 0
 fi
 
-if [ ! -f "${CA_CONFIG}" ] || [ ! -f "${SERVER_CONFIG}" ]; then
+if [ ! -f "${CA_CONFIG}" ] || [ ! -f "${SERVER_CONFIG}" ] || [ ! -f "${CLIENT_CONFIG}" ]; then
   echo "Missing OpenSSL config under ${CERT_DIR}" >&2
   exit 1
 fi
@@ -57,6 +62,9 @@ CA_SERIAL="${TMP_DIR}/ca.srl"
 TMP_CA_CERT="${TMP_DIR}/ca.crt"
 TMP_SERVER_CERT="${TMP_DIR}/localhost.crt"
 TMP_KEYSTORE="${TMP_DIR}/localhost.p12"
+TMP_CLIENT_KEY="${TMP_DIR}/client.key"
+CLIENT_CSR="${TMP_DIR}/client.csr"
+TMP_CLIENT_CERT="${TMP_DIR}/client.crt"
 
 run_openssl req \
   -x509 \
@@ -96,8 +104,31 @@ run_openssl pkcs12 \
   -name trino-dev \
   -passout pass:trino-dev
 
+run_openssl req \
+  -new \
+  -newkey rsa:2048 \
+  -nodes \
+  -keyout "${TMP_CLIENT_KEY}" \
+  -out "${CLIENT_CSR}" \
+  -config "${CLIENT_CONFIG}"
+
+run_openssl x509 \
+  -req \
+  -days 3650 \
+  -in "${CLIENT_CSR}" \
+  -CA "${TMP_CA_CERT}" \
+  -CAkey "${CA_KEY}" \
+  -CAserial "${CA_SERIAL}" \
+  -out "${TMP_CLIENT_CERT}" \
+  -extfile "${CLIENT_CONFIG}" \
+  -extensions v3_req
+
 cp "${TMP_CA_CERT}" "${CA_CERT}"
 cp "${TMP_KEYSTORE}" "${KEYSTORE}"
-chmod 0644 "${CA_CERT}" "${KEYSTORE}"
+cp "${TMP_CLIENT_CERT}" "${CLIENT_CERT}"
+cp "${TMP_CLIENT_KEY}" "${CLIENT_KEY}"
+# The generator runs as root in Docker; the host test process needs to read
+# these generated test credentials too.
+chmod 0644 "${CA_CERT}" "${KEYSTORE}" "${CLIENT_CERT}" "${CLIENT_KEY}"
 
 echo "Generated Trino TLS assets in ${CERT_DIR}"
