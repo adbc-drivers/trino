@@ -24,6 +24,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -956,8 +957,10 @@ func TestURIParsing(t *testing.T) {
 	}
 }
 
-// fakeTrinoServer answers every query with a single row and records the
-// headers of each query submitted to it, keyed by the query text.
+// fakeTrinoServer answers every query with a single row, returned by a
+// follow-up request, and records the headers of the request that submitted
+// each query (keyed by the query text) and of its follow-up request (keyed by
+// "GET " and the query text).
 type fakeTrinoServer struct {
 	*httptest.Server
 
@@ -977,26 +980,38 @@ func newFakeTrinoServer(t *testing.T) *fakeTrinoServer {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/statement" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		query, err := io.ReadAll(r.Body)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		srv.mu.Lock()
-		srv.headers[string(query)] = r.Header.Clone()
-		srv.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{
-			"id": "20260101_000000_00000_abcde",
-			"infoUri": "http://localhost/ui/query.html",
-			"stats": {"state": "FINISHED"},
-			"columns": [{"name": "_col0", "type": "integer", "typeSignature": {"rawType": "integer", "arguments": []}}],
-			"data": [[1]]
-		}`)
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/statement":
+			query, err := io.ReadAll(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			srv.mu.Lock()
+			srv.headers[string(query)] = r.Header.Clone()
+			srv.mu.Unlock()
+			nextURI := srv.URL + "/v1/statement/next?query=" + url.QueryEscape(string(query))
+			_, _ = fmt.Fprintf(w, `{
+				"id": "20260101_000000_00000_abcde",
+				"infoUri": "http://localhost/ui/query.html",
+				"nextUri": %q,
+				"stats": {"state": "QUEUED"}
+			}`, nextURI)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/statement/next":
+			srv.mu.Lock()
+			srv.headers["GET "+r.URL.Query().Get("query")] = r.Header.Clone()
+			srv.mu.Unlock()
+			_, _ = io.WriteString(w, `{
+				"id": "20260101_000000_00000_abcde",
+				"infoUri": "http://localhost/ui/query.html",
+				"stats": {"state": "FINISHED"},
+				"columns": [{"name": "_col0", "type": "integer", "typeSignature": {"rawType": "integer", "arguments": []}}],
+				"data": [[1]]
+			}`)
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -1038,6 +1053,9 @@ func TestHTTPHeaders(t *testing.T) {
 		"trino.http_header.X-Gateway":      "database",
 		"trino.http_header.X-Other":        "database",
 		"trino.http_header.x-trino-source": "my-source",
+		// An empty database header is ignored.
+		"trino.http_header.X-Trino-Client-Tags": "",
+		"trino.session_user":                    "alice",
 	})
 
 	execute := func(query string) {
@@ -1050,6 +1068,7 @@ func TestHTTPHeaders(t *testing.T) {
 	assert.Equal(t, []string{"conn,shared"}, srv.header(t, "SELECT 1", "X-Trino-Client-Tags"))
 	assert.Equal(t, []string{"database"}, srv.header(t, "SELECT 1", "X-Gateway"))
 	assert.Equal(t, []string{"my-source"}, srv.header(t, "SELECT 1", "X-Trino-Source"))
+	assert.Equal(t, []string{"alice"}, srv.header(t, "SELECT 1", "X-Trino-User"))
 
 	// Statement client tags are merged with the connection client tags.
 	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "shared, stmt"))
@@ -1070,6 +1089,13 @@ func TestHTTPHeaders(t *testing.T) {
 	assert.Equal(t, []string{"conn,shared,stmt"}, srv.header(t, "SELECT 3", "X-Trino-Client-Tags"))
 	assert.Equal(t, []string{"statement"}, srv.header(t, "SELECT 3", "X-Gateway"))
 	assert.Empty(t, srv.header(t, "SELECT 3", "X-Trino-Adbc-Statement-Headers"))
+
+	// Statement options only apply to the request that submits the query;
+	// database headers apply to every request.
+	assert.Equal(t, []string{"conn,shared"}, srv.header(t, "GET SELECT 3", "X-Trino-Client-Tags"))
+	assert.Equal(t, []string{"database"}, srv.header(t, "GET SELECT 3", "X-Gateway"))
+	assert.Equal(t, []string{"my-source"}, srv.header(t, "GET SELECT 3", "X-Trino-Source"))
+	assert.Empty(t, srv.header(t, "GET SELECT 3", "X-Trino-Adbc-Statement-Headers"))
 
 	// The raw header replaces the connection client tags; client_tags are
 	// still merged into it.
@@ -1099,7 +1125,7 @@ func TestHTTPHeaderOptions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", val)
 
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "a, b"))
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "a, b, a"))
 	val, err = getter.GetOption(ctx, "trino.statement.client_tags")
 	require.NoError(t, err)
 	assert.Equal(t, "a,b", val)
@@ -1119,6 +1145,9 @@ func TestHTTPHeaderOptions(t *testing.T) {
 	}{
 		{"trino.statement.client_tags", "a,,b"},
 		{"trino.statement.client_tags", " "},
+		{"trino.statement.client_tags", "a\nb"},
+		{"trino.statement.http_header.Accept-Encoding", "gzip"},
+		{"trino.statement.http_header.Connection", "close"},
 		{"trino.statement.http_header.X-Trino-User", "someone"},
 		{"trino.statement.http_header.x-trino-catalog", "other"},
 		{"trino.statement.http_header.Authorization", "Bearer token"},
@@ -1134,16 +1163,16 @@ func TestHTTPHeaderOptions(t *testing.T) {
 		})
 	}
 
-	for _, key := range []string{
-		"trino.http_header.X-Trino-Session",
-		"trino.http_header.Bad Header",
+	for _, opts := range []map[string]string{
+		{"trino.http_header.X-Trino-Session": "value"},
+		{"trino.http_header.Bad Header": "value"},
+		{"trino.http_header.X-Foo": "a", "trino.http_header.x-foo": "b"},
 	} {
-		t.Run(key, func(t *testing.T) {
+		t.Run(fmt.Sprint(opts), func(t *testing.T) {
 			mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
-			_, err := trino.NewDriver(mem).NewDatabaseWithContext(ctx, map[string]string{
-				adbc.OptionKeyURI: srv.URL,
-				key:               "value",
-			})
+			dbOpts := map[string]string{adbc.OptionKeyURI: srv.URL}
+			maps.Copy(dbOpts, opts)
+			_, err := trino.NewDriver(mem).NewDatabaseWithContext(ctx, dbOpts)
 			var adbcErr adbc.Error
 			require.ErrorAs(t, err, &adbcErr)
 			assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)

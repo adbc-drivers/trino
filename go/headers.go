@@ -36,12 +36,21 @@ const (
 )
 
 // reservedHeaders are managed by trino-go-client (which tracks the state of
-// most of them across requests) or by net/http, and cannot be overridden.
+// most of them across requests) or by net/http, or are hop-by-hop headers,
+// and cannot be overridden.
 var reservedHeaders = map[string]struct{}{
+	"Accept-Encoding":             {},
 	"Authorization":               {},
+	"Connection":                  {},
 	"Content-Length":              {},
 	"Content-Type":                {},
 	"Host":                        {},
+	"Keep-Alive":                  {},
+	"Proxy-Connection":            {},
+	"Te":                          {}, // codespell:ignore
+	"Trailer":                     {},
+	"Transfer-Encoding":           {},
+	"Upgrade":                     {},
 	"X-Trino-Catalog":             {},
 	"X-Trino-Client-Capabilities": {},
 	"X-Trino-Extra-Credential":    {},
@@ -77,15 +86,21 @@ func parseHeaderOption(key, prefix, value string) (string, error) {
 	return name, nil
 }
 
-// parseClientTags splits a comma-separated list of client tags.
+// parseClientTags splits a comma-separated list of client tags, removing
+// duplicates.
 func parseClientTags(value string) ([]string, error) {
-	tags := strings.Split(value, ",")
-	for i, tag := range tags {
+	var tags []string
+	for tag := range strings.SplitSeq(value, ",") {
 		tag = strings.TrimSpace(tag)
 		if tag == "" {
 			return nil, errors.New("client tags must not be empty")
 		}
-		tags[i] = tag
+		if !httpguts.ValidHeaderFieldValue(tag) {
+			return nil, fmt.Errorf("invalid client tag %q", tag)
+		}
+		if !slices.Contains(tags, tag) {
+			tags = append(tags, tag)
+		}
 	}
 	return tags, nil
 }
@@ -108,9 +123,10 @@ func mergeClientTags(header string, tags []string) string {
 }
 
 // statementHeadersParam carries statement-level headers to headerTransport.
-// It is passed as a query parameter, which trino-go-client sends as a request
-// header, and headerTransport removes it before the request is sent.
-// (sqlwrapper does not propagate the query context, so it cannot be used.)
+// It is passed as a named argument, which trino-go-client sends as a header
+// on the request that submits the query (but not on follow-up requests), and
+// headerTransport removes it before the request is sent.  (sqlwrapper does not
+// propagate the query context, so it cannot be used.)
 const statementHeadersParam = "X-Trino-Adbc-Statement-Headers"
 
 type statementHeaders struct {
@@ -142,14 +158,14 @@ type headerTransport struct {
 	base        http.RoundTripper
 	scheme      string
 	host        string
-	sessionUser string
+	sessionUser *string
 	headers     http.Header
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	encoded := req.Header.Get(statementHeadersParam)
 	toServer := req.URL.Scheme == t.scheme && req.URL.Host == t.host
-	if encoded == "" && (!toServer || (t.sessionUser == "" && len(t.headers) == 0)) {
+	if encoded == "" && (!toServer || (t.sessionUser == nil && len(t.headers) == 0)) {
 		return t.base.RoundTrip(req)
 	}
 
@@ -158,8 +174,8 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !toServer {
 		return t.base.RoundTrip(req)
 	}
-	if t.sessionUser != "" {
-		req.Header.Set("X-Trino-User", t.sessionUser)
+	if t.sessionUser != nil {
+		req.Header.Set("X-Trino-User", *t.sessionUser)
 	}
 	for name, values := range t.headers {
 		req.Header[name] = slices.Clone(values)
