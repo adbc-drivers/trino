@@ -14,6 +14,7 @@
 
 import json
 import os
+import ssl
 import urllib.request
 
 import adbc_driver_manager
@@ -161,16 +162,25 @@ def test_query_id_ingest_batch_size(driver, conn) -> None:
 
 
 def get_last_query_info(cursor) -> dict:
-    query_id = cursor.adbc_statement.get_option("trino.statement.last_query_id")
+    """Get the last query's info from the Trino REST API, using the same
+    server, transport and CA certificate as the validation connection."""
     host = os.environ.get("TRINO_HOST")
-    if not host:
-        pytest.skip("TRINO_HOST must be set")
-    port = os.environ.get("TRINO_HTTP_PORT", "8080")
+    port = os.environ.get("TRINO_PORT")
+    scheme = os.environ.get("TRINO_SSL_MODE", "").lower()
+    if not host or not port or scheme not in ("http", "https"):
+        pytest.skip("TRINO_HOST, TRINO_PORT and TRINO_SSL_MODE must be set")
+    context = None
+    if scheme == "https":
+        context = ssl.create_default_context(
+            cafile=os.environ.get("TRINO_SSL_CERT_PATH") or None
+        )
+
+    query_id = cursor.adbc_statement.get_option("trino.statement.last_query_id")
     request = urllib.request.Request(
-        f"http://{host}:{port}/v1/query/{query_id}",
+        f"{scheme}://{host}:{port}/v1/query/{query_id}",
         headers={"X-Trino-User": os.environ.get("TRINO_USERNAME", "test")},
     )
-    with urllib.request.urlopen(request) as response:
+    with urllib.request.urlopen(request, context=context) as response:
         return json.load(response)
 
 

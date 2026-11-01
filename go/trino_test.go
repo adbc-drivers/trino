@@ -1025,6 +1025,19 @@ func (srv *fakeTrinoServer) header(t *testing.T, query, name string) []string {
 	return headers.Values(name)
 }
 
+// queries returns the text of every query submitted to the server.
+func (srv *fakeTrinoServer) queries() []string {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	var queries []string
+	for query := range srv.headers {
+		if !strings.HasPrefix(query, "GET ") {
+			queries = append(queries, query)
+		}
+	}
+	return queries
+}
+
 func openFakeTrino(t *testing.T, srv *fakeTrinoServer, opts map[string]string) adbc.StatementWithContext {
 	ctx := context.Background()
 	mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
@@ -1115,6 +1128,34 @@ func TestHTTPHeaders(t *testing.T) {
 	assert.Equal(t, []string{"database"}, srv.header(t, "SELECT 6", "X-Gateway"))
 }
 
+func TestHTTPHeadersIngest(t *testing.T) {
+	ctx := context.Background()
+	srv := newFakeTrinoServer(t)
+	stmt := openFakeTrino(t, srv, nil)
+
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "ints", Type: arrow.PrimitiveTypes.Int64, Nullable: true},
+	}, nil)
+	batch := testutil.RecordFromJSON(t, memory.DefaultAllocator, schema, `[{"ints": 1}, {"ints": 2}]`)
+	defer batch.Release()
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "ingest"))
+	require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, "foo"))
+	require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestMode, adbc.OptionValueIngestModeReplace))
+	require.NoError(t, stmt.Bind(ctx, batch))
+	_, err := stmt.ExecuteUpdate(ctx)
+	require.NoError(t, err)
+
+	// Every query run by the ingest (drop, create, insert) carries the tags.
+	queries := srv.queries()
+	require.NotEmpty(t, queries)
+	var sawInsert bool
+	for _, query := range queries {
+		sawInsert = sawInsert || strings.Contains(query, "INSERT")
+		assert.Equal(t, []string{"conn,shared,ingest"}, srv.header(t, query, "X-Trino-Client-Tags"), query)
+	}
+	assert.True(t, sawInsert, "no INSERT among %q", queries)
+}
+
 func TestHTTPHeaderOptions(t *testing.T) {
 	ctx := context.Background()
 	srv := newFakeTrinoServer(t)
@@ -1135,7 +1176,18 @@ func TestHTTPHeaderOptions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "value", val)
 
-	_, err = getter.GetOption(ctx, "trino.statement.http_header.X-Unset")
+	// Known options that are not set return an empty string.
+	val, err = getter.GetOption(ctx, "trino.statement.http_header.X-Unset")
+	require.NoError(t, err)
+	assert.Equal(t, "", val)
+
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", ""))
+	val, err = getter.GetOption(ctx, "trino.statement.http_header.X-Gateway")
+	require.NoError(t, err)
+	assert.Equal(t, "", val)
+
+	// Unknown options are not found.
+	_, err = getter.GetOption(ctx, "trino.statement.unknown")
 	var adbcErr adbc.Error
 	require.ErrorAs(t, err, &adbcErr)
 	assert.Equal(t, adbc.StatusNotFound, adbcErr.Code)

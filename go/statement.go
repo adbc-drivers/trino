@@ -56,9 +56,7 @@ func (st *trinoStatement) GetOption(ctx context.Context, key string) (string, er
 		return strings.Join(st.clientTags, ","), nil
 	case strings.HasPrefix(key, optionStatementHTTPHeaderPrefix):
 		name := textproto.CanonicalMIMEHeaderKey(strings.TrimPrefix(key, optionStatementHTTPHeaderPrefix))
-		if value, ok := st.headers[name]; ok {
-			return value, nil
-		}
+		return st.headers[name], nil
 	}
 	return st.StatementImplBase.GetOption(ctx, key)
 }
