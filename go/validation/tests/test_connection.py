@@ -44,3 +44,31 @@ def test_session_user(driver_path: str, db_kwargs: dict, option: str) -> None:
     ):
         cursor.execute("SELECT current_user")
         assert cursor.fetchone() == (session_user,)
+
+
+def test_http_header(driver_path: str, db_kwargs: dict) -> None:
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={**db_kwargs, "trino.http_header.X-Trino-Source": "adbc-db"},
+            autocommit=True,
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
+        cursor.fetchall()
+        query_id = cursor.adbc_statement.get_option("trino.statement.last_query_id")
+        cursor.execute(
+            f"SELECT source FROM system.runtime.queries WHERE query_id = '{query_id}'"
+        )
+        assert cursor.fetchone() == ("adbc-db",)
+
+
+def test_reserved_http_header(driver_path: str, db_kwargs: dict) -> None:
+    with pytest.raises(
+        adbc_driver_manager.ProgrammingError, match="managed by the driver"
+    ):
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={**db_kwargs, "trino.http_header.Authorization": "Bearer x"},
+        )

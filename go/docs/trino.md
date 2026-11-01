@@ -125,6 +125,23 @@ digits are truncated to nanoseconds.
 
   Impersonate a different user (run queries as that user) while logging in as the specified user. If both options are provided, it is not specified which one will be followed.
 
+`trino.http_header.<Name>`
+: **Type:** string.
+
+  Send the HTTP header `<Name>` with the given value on every request to the Trino server, for example to route queries through a gateway or proxy. The header overrides one with the same name that the driver sets from the URI (e.g. `X-Trino-Client-Tags` from `clientTags`). Headers that the driver manages itself (`Authorization`, `X-Trino-User`, `X-Trino-Catalog`, `X-Trino-Schema`, `X-Trino-Session`, `X-Trino-Role`, `X-Trino-Transaction-Id`, `X-Trino-Prepared-Statement`, and similar) cannot be set.
+
+`trino.statement.client_tags`
+: **Type:** string.
+
+  A comma-separated list of client tags to add to queries run by this statement, e.g. to select a [resource group](https://trino.io/docs/current/admin/resource-groups.html). The tags are merged with the connection's client tags (from `clientTags` in the URI), not replaced; to replace them, set `trino.statement.http_header.X-Trino-Client-Tags` instead. Tags must not be empty. Set an empty string to remove the tags.
+
+`trino.statement.http_header.<Name>`
+: **Type:** string.
+
+  Send the HTTP header `<Name>` with the given value on requests for queries run by this statement. The header overrides one with the same name set by the driver or by `trino.http_header.<Name>`. The same headers as for `trino.http_header.<Name>` cannot be set. Set an empty string to remove the header.
+
+  Statement options apply to every later execution of the statement until they are changed.
+
 `trino.statement.last_query_id`
 : **Read-only.** **Type:** string.
 

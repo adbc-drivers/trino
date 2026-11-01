@@ -17,6 +17,7 @@ package trino
 import (
 	"context"
 	"database/sql"
+	"net/textproto"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -30,6 +31,9 @@ type trinoStatement struct {
 	*sqlwrapper.StatementImplBase
 
 	lastQueryId atomic.Pointer[string]
+
+	headers    map[string]string
+	clientTags []string
 }
 
 func (st *trinoStatement) SetSqlQuery(ctx context.Context, query string) error {
@@ -41,22 +45,65 @@ func (st *trinoStatement) SetSqlQuery(ctx context.Context, query string) error {
 }
 
 func (st *trinoStatement) GetOption(ctx context.Context, key string) (string, error) {
-	switch key {
-	case "trino.statement.last_query_id":
+	switch {
+	case key == "trino.statement.last_query_id":
 		val := st.lastQueryId.Load()
 		if val == nil {
 			return "", nil
 		}
 		return *val, nil
+	case key == optionStatementClientTags:
+		return strings.Join(st.clientTags, ","), nil
+	case strings.HasPrefix(key, optionStatementHTTPHeaderPrefix):
+		name := textproto.CanonicalMIMEHeaderKey(strings.TrimPrefix(key, optionStatementHTTPHeaderPrefix))
+		if value, ok := st.headers[name]; ok {
+			return value, nil
+		}
 	}
 	return st.StatementImplBase.GetOption(ctx, key)
 }
 
+func (st *trinoStatement) SetOption(ctx context.Context, key, val string) error {
+	switch {
+	case key == optionStatementClientTags:
+		if val == "" {
+			st.clientTags = nil
+			return nil
+		}
+		tags, err := parseClientTags(val)
+		if err != nil {
+			return st.Base().ErrorHelper.InvalidArgument("invalid option %s: %s", key, err)
+		}
+		st.clientTags = tags
+		return nil
+	case strings.HasPrefix(key, optionStatementHTTPHeaderPrefix):
+		name, err := parseHeaderOption(key, optionStatementHTTPHeaderPrefix, val)
+		if err != nil {
+			return st.Base().ErrorHelper.InvalidArgument("invalid option %s: %s", key, err)
+		}
+		if val == "" {
+			delete(st.headers, name)
+			return nil
+		}
+		if st.headers == nil {
+			st.headers = map[string]string{}
+		}
+		st.headers[name] = val
+		return nil
+	}
+	return st.StatementImplBase.SetOption(ctx, key, val)
+}
+
 func (st *trinoStatement) GetAdditionalExecParams() []any {
-	return []any{
+	params := []any{
 		sql.Named("X-Trino-Progress-Callback", trinoProgressCallback{st}),
 		sql.Named("X-Trino-Progress-Callback-Period", 5*time.Second),
 	}
+	if len(st.headers) > 0 || len(st.clientTags) > 0 {
+		headers := statementHeaders{Headers: st.headers, ClientTags: st.clientTags}
+		params = append(params, sql.Named(statementHeadersParam, headers.encode()))
+	}
+	return params
 }
 
 func (st *trinoStatement) MakeTypeConverter(vendorName string) sqlwrapper.TypeConverter {

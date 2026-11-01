@@ -22,9 +22,11 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 
@@ -40,21 +42,6 @@ type TrinoDBFactory struct{}
 type customClientRegistration struct {
 	mu         sync.Mutex
 	registered bool
-}
-
-type sessionUserTransport struct {
-	base        http.RoundTripper
-	scheme      string
-	host        string
-	sessionUser string
-}
-
-func (t *sessionUserTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.URL.Scheme == t.scheme && req.URL.Host == t.host {
-		req = req.Clone(req.Context())
-		req.Header.Set("X-Trino-User", t.sessionUser)
-	}
-	return t.base.RoundTrip(req)
 }
 
 var (
@@ -117,31 +104,38 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 			}
 		}
 	}
+	serverURL, err := url.Parse(cfg.ServerURI)
+	if err != nil {
+		return "", fmt.Errorf("could not parse Trino server URI: %w", err)
+	}
+	rt := &headerTransport{
+		base:    transport,
+		scheme:  serverURL.Scheme,
+		host:    serverURL.Host,
+		headers: http.Header{},
+	}
+	fmt.Fprintf(&httpClientName, "|scheme=%q|host=%q", serverURL.Scheme, serverURL.Host)
+	for key, value := range opts {
+		switch {
+		case key == "trino.session_user", key == "trino.impersonation_user":
+			rt.sessionUser = value
+		case strings.HasPrefix(key, optionHTTPHeaderPrefix):
+			name, err := parseHeaderOption(key, optionHTTPHeaderPrefix, value)
+			if err != nil {
+				return "", fmt.Errorf("invalid option %s: %w", key, err)
+			}
+			rt.headers.Set(name, value)
+		}
+	}
+	if rt.sessionUser != "" {
+		fmt.Fprintf(&httpClientName, "|session_user=%q", rt.sessionUser)
+	}
+	for _, name := range slices.Sorted(maps.Keys(rt.headers)) {
+		fmt.Fprintf(&httpClientName, "|header=%q:%q", name, rt.headers.Get(name))
+	}
 	customClient := &http.Client{
 		Timeout:   timeout,
-		Transport: transport,
-	}
-	var sessionUser string
-	var hasSessionUser bool
-	for key, value := range opts {
-		switch key {
-		case "trino.session_user", "trino.impersonation_user":
-			sessionUser = value
-			hasSessionUser = true
-		}
-	}
-	if hasSessionUser {
-		serverURL, err := url.Parse(cfg.ServerURI)
-		if err != nil {
-			return "", fmt.Errorf("could not parse Trino server URI: %w", err)
-		}
-		customClient.Transport = &sessionUserTransport{
-			base:        transport,
-			scheme:      serverURL.Scheme,
-			host:        serverURL.Host,
-			sessionUser: sessionUser,
-		}
-		fmt.Fprintf(&httpClientName, "|scheme=%q|host=%q|session_user=%q", serverURL.Scheme, serverURL.Host, sessionUser)
+		Transport: rt,
 	}
 	if err := ensureCustomClientRegistered(httpClientName.String(), customClient); err != nil {
 		return "", fmt.Errorf("failed to register custom HTTP client: %v", err)

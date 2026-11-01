@@ -20,9 +20,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
@@ -947,6 +952,201 @@ func TestURIParsing(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedDSN, result)
+		})
+	}
+}
+
+// fakeTrinoServer answers every query with a single row and records the
+// headers of each query submitted to it, keyed by the query text.
+type fakeTrinoServer struct {
+	*httptest.Server
+
+	mu      sync.Mutex
+	headers map[string]http.Header
+}
+
+func newFakeTrinoServer(t *testing.T) *fakeTrinoServer {
+	srv := &fakeTrinoServer{headers: map[string]http.Header{}}
+	srv.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/info" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"starting": false}`)
+			return
+		}
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/statement" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		query, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		srv.mu.Lock()
+		srv.headers[string(query)] = r.Header.Clone()
+		srv.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"id": "20260101_000000_00000_abcde",
+			"infoUri": "http://localhost/ui/query.html",
+			"stats": {"state": "FINISHED"},
+			"columns": [{"name": "_col0", "type": "integer", "typeSignature": {"rawType": "integer", "arguments": []}}],
+			"data": [[1]]
+		}`)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func (srv *fakeTrinoServer) header(t *testing.T, query, name string) []string {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	headers, ok := srv.headers[query]
+	require.True(t, ok, "query %q was not received", query)
+	return headers.Values(name)
+}
+
+func openFakeTrino(t *testing.T, srv *fakeTrinoServer, opts map[string]string) adbc.StatementWithContext {
+	ctx := context.Background()
+	mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
+	t.Cleanup(func() { mem.AssertSize(t, 0) })
+
+	dbOpts := map[string]string{
+		adbc.OptionKeyURI: srv.URL + "?clientTags=conn,shared",
+	}
+	maps.Copy(dbOpts, opts)
+	db, err := trino.NewDriver(mem).NewDatabaseWithContext(ctx, dbOpts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close(ctx)) })
+	cnxn, err := db.Open(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cnxn.Close(ctx)) })
+	stmt, err := cnxn.NewStatement(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, stmt.Close(ctx)) })
+	return stmt
+}
+
+func TestHTTPHeaders(t *testing.T) {
+	ctx := context.Background()
+	srv := newFakeTrinoServer(t)
+	stmt := openFakeTrino(t, srv, map[string]string{
+		"trino.http_header.X-Gateway":      "database",
+		"trino.http_header.X-Other":        "database",
+		"trino.http_header.x-trino-source": "my-source",
+	})
+
+	execute := func(query string) {
+		require.NoError(t, stmt.SetSqlQuery(ctx, query))
+		_, err := stmt.ExecuteUpdate(ctx)
+		require.NoError(t, err)
+	}
+
+	execute("SELECT 1")
+	assert.Equal(t, []string{"conn,shared"}, srv.header(t, "SELECT 1", "X-Trino-Client-Tags"))
+	assert.Equal(t, []string{"database"}, srv.header(t, "SELECT 1", "X-Gateway"))
+	assert.Equal(t, []string{"my-source"}, srv.header(t, "SELECT 1", "X-Trino-Source"))
+
+	// Statement client tags are merged with the connection client tags.
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "shared, stmt"))
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", "statement"))
+	execute("SELECT 2")
+	assert.Equal(t, []string{"conn,shared,stmt"}, srv.header(t, "SELECT 2", "X-Trino-Client-Tags"))
+	assert.Equal(t, []string{"statement"}, srv.header(t, "SELECT 2", "X-Gateway"))
+	assert.Equal(t, []string{"database"}, srv.header(t, "SELECT 2", "X-Other"))
+
+	// Options persist across executions.
+	require.NoError(t, stmt.SetSqlQuery(ctx, "SELECT 3"))
+	reader, _, err := stmt.ExecuteQuery(ctx)
+	require.NoError(t, err)
+	for reader.Next() {
+	}
+	require.NoError(t, reader.Err())
+	reader.Release()
+	assert.Equal(t, []string{"conn,shared,stmt"}, srv.header(t, "SELECT 3", "X-Trino-Client-Tags"))
+	assert.Equal(t, []string{"statement"}, srv.header(t, "SELECT 3", "X-Gateway"))
+	assert.Empty(t, srv.header(t, "SELECT 3", "X-Trino-Adbc-Statement-Headers"))
+
+	// The raw header replaces the connection client tags; client_tags are
+	// still merged into it.
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Trino-Client-Tags", "raw"))
+	execute("SELECT 4")
+	assert.Equal(t, []string{"raw,shared,stmt"}, srv.header(t, "SELECT 4", "X-Trino-Client-Tags"))
+
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", ""))
+	execute("SELECT 5")
+	assert.Equal(t, []string{"raw"}, srv.header(t, "SELECT 5", "X-Trino-Client-Tags"))
+
+	// An empty value clears the option.
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Trino-Client-Tags", ""))
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", ""))
+	execute("SELECT 6")
+	assert.Equal(t, []string{"conn,shared"}, srv.header(t, "SELECT 6", "X-Trino-Client-Tags"))
+	assert.Equal(t, []string{"database"}, srv.header(t, "SELECT 6", "X-Gateway"))
+}
+
+func TestHTTPHeaderOptions(t *testing.T) {
+	ctx := context.Background()
+	srv := newFakeTrinoServer(t)
+	stmt := openFakeTrino(t, srv, nil)
+	getter := stmt.(adbc.GetSetOptionsWithContext)
+
+	val, err := getter.GetOption(ctx, "trino.statement.client_tags")
+	require.NoError(t, err)
+	assert.Equal(t, "", val)
+
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "a, b"))
+	val, err = getter.GetOption(ctx, "trino.statement.client_tags")
+	require.NoError(t, err)
+	assert.Equal(t, "a,b", val)
+
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.x-gateway", "value"))
+	val, err = getter.GetOption(ctx, "trino.statement.http_header.X-Gateway")
+	require.NoError(t, err)
+	assert.Equal(t, "value", val)
+
+	_, err = getter.GetOption(ctx, "trino.statement.http_header.X-Unset")
+	var adbcErr adbc.Error
+	require.ErrorAs(t, err, &adbcErr)
+	assert.Equal(t, adbc.StatusNotFound, adbcErr.Code)
+
+	for _, tc := range []struct {
+		key, value string
+	}{
+		{"trino.statement.client_tags", "a,,b"},
+		{"trino.statement.client_tags", " "},
+		{"trino.statement.http_header.X-Trino-User", "someone"},
+		{"trino.statement.http_header.x-trino-catalog", "other"},
+		{"trino.statement.http_header.Authorization", "Bearer token"},
+		{"trino.statement.http_header.Bad Header", "value"},
+		{"trino.statement.http_header.", "value"},
+		{"trino.statement.http_header.X-Gateway", "bad\nvalue"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			err := stmt.SetOption(ctx, tc.key, tc.value)
+			var adbcErr adbc.Error
+			require.ErrorAs(t, err, &adbcErr)
+			assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
+		})
+	}
+
+	for _, key := range []string{
+		"trino.http_header.X-Trino-Session",
+		"trino.http_header.Bad Header",
+	} {
+		t.Run(key, func(t *testing.T) {
+			mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
+			_, err := trino.NewDriver(mem).NewDatabaseWithContext(ctx, map[string]string{
+				adbc.OptionKeyURI: srv.URL,
+				key:               "value",
+			})
+			var adbcErr adbc.Error
+			require.ErrorAs(t, err, &adbcErr)
+			assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
 		})
 	}
 }
