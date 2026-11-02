@@ -89,7 +89,7 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94  # v0.11.2
         with:
-          pixi-version: v0.82.0
+          pixi-version: v0.83.0
           run-install: false
 
 
@@ -207,7 +207,7 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94  # v0.11.2
         with:
-          pixi-version: v0.82.0
+          pixi-version: v0.83.0
           run-install: false
 
 
@@ -310,12 +310,14 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
+      max-parallel: 3
       matrix:
         include:
           - { platform: linux, arch: amd64, runner: ubuntu-latest }
-          - { platform: linux, arch: arm64, runner: ubuntu-24.04-arm }
           - { platform: macos, arch: arm64, runner: macos-latest }
           - { platform: windows, arch: amd64, runner: windows-latest }
+          - { platform: linux, arch: arm64, runner: ubuntu-24.04-arm }
+          - { platform: windows, arch: arm64, runner: windows-11-vs2026-arm }
     permissions:
       contents: read
       packages: read
@@ -334,9 +336,27 @@ jobs:
           check-latest: true
           go-version-file: go/go.mod
 
+      # CGO requires a GCC-like frontend, provide this via MSYS Clang
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e  # v2.33.0
+        id: msys2
+        if: matrix.platform == 'windows' && matrix.arch == 'arm64'
+        with:
+          msystem: CLANGARM64
+          update: true
+          install: mingw-w64-clang-aarch64-gcc-compat
+
+      - name: Add CLANGARM64 toolchain to PATH
+        shell: pwsh
+        if: matrix.platform == 'windows' && matrix.arch == 'arm64'
+        env:
+          STEPS_MSYS2_OUTPUTS_MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          "$env:STEPS_MSYS2_OUTPUTS_MSYS2_LOCATION\clangarm64\bin" |
+            Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94  # v0.11.2
         with:
-          pixi-version: v0.82.0
+          pixi-version: v0.83.0
           run-install: false
 
       - name: Install dev tools
@@ -412,7 +432,7 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94  # v0.11.2
         with:
-          pixi-version: v0.82.0
+          pixi-version: v0.83.0
           run-install: false
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
@@ -477,11 +497,13 @@ jobs:
       - package
     strategy:
       fail-fast: false
+      max-parallel: 3
       matrix:
         include:
           - { platform: linux, arch: amd64, runner: ubuntu-latest }
           - { platform: macos, arch: arm64, runner: macos-latest }
           - { platform: windows, arch: amd64, runner: windows-latest }
+          - { platform: windows, arch: arm64, runner: windows-11-vs2026-arm }
     steps:
       # for now, install dbc from main
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
@@ -490,7 +512,7 @@ jobs:
           go-version: 'stable'
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94  # v0.11.2
         with:
-          pixi-version: v0.82.0
+          pixi-version: v0.83.0
           run-install: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
@@ -530,7 +552,7 @@ jobs:
             source .env.ci
           fi
           set +a
-          pixi exec -s adbc-driver-manager -s pyarrow -s pytest python -m pytest -vs ci/test_package.py
+          pixi run pytest -vs ci/test_package.py
 
 
   release:
@@ -552,7 +574,7 @@ jobs:
 
       - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94  # v0.11.2
         with:
-          pixi-version: v0.82.0
+          pixi-version: v0.83.0
           run-install: false
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
