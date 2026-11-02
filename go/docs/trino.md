@@ -80,9 +80,18 @@ By default, connections use HTTPS. To connect using HTTP, add `SSL=false` as a q
 
 SSL Certificate Verification:
 
-When connecting to servers with self-signed certificates or certificates signed by an unknown authority, you may encounter certificate verification errors. Use `SSLVerification=NONE` to disable certificate verification while maintaining an encrypted HTTPS connection:
+To trust a private CA, provide its certificate using `SSLCertPath` or `SSLCert`.
+
+Use `SSLVerification=NONE` to disable certificate verification while maintaining
+an encrypted HTTPS connection:
 
 - `trino://localhost:8443/catalog?SSLVerification=NONE` → Uses HTTPS with certificate verification disabled
+
+Client Certificate Authentication:
+
+For mutual TLS, use HTTPS and provide the client certificate using
+`SSLClientCertPath` or `SSLClientCert`, and its private key using
+`SSLClientKeyPath` or `SSLClientKey`.
 
 See [Trino JDBC Documentation](https://trino.io/docs/current/client/jdbc.html#parameter-reference) for complete parameter reference and [Trino Concepts](https://trino.io/docs/current/overview/concepts.html#catalog) for more information.
 

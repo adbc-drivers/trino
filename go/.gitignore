@@ -20,3 +20,5 @@ generated/
 validation-report.xml
 ci/docker/certs/ca.crt
 ci/docker/certs/localhost.p12
+ci/docker/certs/client.crt
+ci/docker/certs/client.key

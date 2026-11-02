@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import urllib.parse
+from pathlib import Path
 
 import adbc_driver_manager.dbapi
 import pytest
@@ -88,6 +89,7 @@ def test_ssl_modes(
     trino_http_port: str,
     trino_https_port: str,
     trino_ssl_cert_path: str,
+    trino_client_cert_params: dict[str, str],
     ssl_mode: str,
 ) -> None:
     """Test trusted HTTPS, HTTPS with disabled verification, and plain HTTP."""
@@ -114,6 +116,9 @@ def test_ssl_modes(
     else:
         raise AssertionError(f"unexpected ssl_mode {ssl_mode}")
 
+    if ssl_mode != "plain_http":
+        query_params.extend(trino_client_cert_params.items())
+
     ssl_uri = urllib.parse.urlunparse(
         (
             "trino",
@@ -135,6 +140,73 @@ def test_ssl_modes(
         cursor.execute("SELECT 1")
         result = cursor.fetchone()
         assert result[0] == 1
+
+
+@pytest.mark.parametrize(
+    ("inline_certificate", "inline_key"),
+    [(False, False), (True, True), (False, True), (True, False)],
+    ids=["files", "inline", "certificate-file", "key-file"],
+)
+def test_client_certificate_authentication(
+    driver_path: str,
+    uri: str,
+    trino_ssl_mode: str,
+    trino_username: str,
+    trino_client_cert_params: dict[str, str],
+    inline_certificate: bool,
+    inline_key: bool,
+) -> None:
+    if trino_ssl_mode != "https" or not trino_client_cert_params:
+        pytest.skip(
+            "client certificate validation requires HTTPS and client credentials"
+        )
+
+    parsed = urllib.parse.urlparse(uri)
+    params = dict(urllib.parse.parse_qsl(parsed.query))
+    if inline_certificate:
+        params["SSLClientCert"] = Path(params.pop("SSLClientCertPath")).read_text()
+    if inline_key:
+        params["SSLClientKey"] = Path(params.pop("SSLClientKeyPath")).read_text()
+    auth_uri = parsed._replace(query=urllib.parse.urlencode(params)).geturl()
+
+    with (
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": auth_uri, "username": trino_username},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT current_user")
+        assert cursor.fetchone() == (trino_username,)
+
+
+def test_client_certificate_required(
+    driver_path: str,
+    uri: str,
+    trino_ssl_mode: str,
+    trino_username: str,
+    trino_client_cert_params: dict[str, str],
+) -> None:
+    if trino_ssl_mode != "https" or not trino_client_cert_params:
+        pytest.skip(
+            "client certificate validation requires HTTPS and client credentials"
+        )
+
+    parsed = urllib.parse.urlparse(uri)
+    params = dict(urllib.parse.parse_qsl(parsed.query))
+    params.pop("SSLClientCertPath")
+    params.pop("SSLClientKeyPath")
+    unauthenticated_uri = parsed._replace(query=urllib.parse.urlencode(params)).geturl()
+
+    with (
+        pytest.raises(adbc_driver_manager.Error, match="401"),
+        adbc_driver_manager.dbapi.connect(
+            driver=driver_path,
+            db_kwargs={"uri": unauthenticated_uri, "username": trino_username},
+        ) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute("SELECT 1")
 
 
 def test_uri_catalog_schema_parsing(
@@ -343,6 +415,7 @@ def test_plain_host_with_username_options(
     trino_port: str,
     trino_ssl_mode: str,
     trino_ssl_cert_path: str,
+    trino_client_cert_params: dict[str, str],
 ) -> None:
     """
     Tests that a plain host string
@@ -352,6 +425,7 @@ def test_plain_host_with_username_options(
     if trino_ssl_mode == "https":
         query_params.append(("SSL", "true"))
         query_params.append(("SSLCertPath", trino_ssl_cert_path))
+        query_params.extend(trino_client_cert_params.items())
     else:
         query_params.append(("SSL", "false"))
 

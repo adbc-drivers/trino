@@ -87,18 +87,36 @@ def trino_ssl_cert_path() -> str:
 
 
 @pytest.fixture(scope="session")
+def trino_client_cert_params() -> dict[str, str]:
+    cert_path = os.environ.get("TRINO_SSL_CLIENT_CERT_PATH", "")
+    key_path = os.environ.get("TRINO_SSL_CLIENT_KEY_PATH", "")
+    if bool(cert_path) != bool(key_path):
+        pytest.fail(
+            "TRINO_SSL_CLIENT_CERT_PATH and TRINO_SSL_CLIENT_KEY_PATH must be set together"
+        )
+    if not cert_path:
+        return {}
+    return {"SSLClientCertPath": cert_path, "SSLClientKeyPath": key_path}
+
+
+@pytest.fixture(scope="session")
 def trino_username() -> str:
     """Trino username. Example: TRINO_USERNAME=test"""
     return require_env("TRINO_USERNAME")
 
 
 @pytest.fixture(scope="session")
-def trino_uri_query(trino_ssl_mode: str, trino_ssl_cert_path: str) -> str:
+def trino_uri_query(
+    trino_ssl_mode: str,
+    trino_ssl_cert_path: str,
+    trino_client_cert_params: dict[str, str],
+) -> str:
     """Connection options appended to `trino://` URIs."""
     query_params: list[tuple[str, str]] = []
     if trino_ssl_mode == "https":
         query_params.append(("SSL", "true"))
         query_params.append(("SSLCertPath", trino_ssl_cert_path))
+        query_params.extend(trino_client_cert_params.items())
     else:
         query_params.append(("SSL", "false"))
 
@@ -134,6 +152,7 @@ def dsn(
     trino_schema: str,
     trino_http_scheme: str,
     trino_ssl_cert_path: str,
+    trino_client_cert_params: dict[str, str],
 ) -> str:
     """
     Constructs a Trino DSN in Go Trino Driver's native format.
@@ -147,6 +166,7 @@ def dsn(
         query_params.append(("SSL", "false"))
     else:
         query_params.append(("SSLCertPath", trino_ssl_cert_path))
+        query_params.extend(trino_client_cert_params.items())
 
     query = urllib.parse.urlencode(query_params)
     return f"{trino_http_scheme}://{trino_username}@{trino_host}:{trino_port}?{query}"
