@@ -80,22 +80,18 @@ By default, connections use HTTPS. To connect using HTTP, add `SSL=false` as a q
 
 SSL Certificate Verification:
 
-When connecting to servers with self-signed certificates or certificates signed by an unknown authority, you may encounter certificate verification errors. Use `SSLVerification=NONE` to disable certificate verification while maintaining an encrypted HTTPS connection:
+To trust a private CA, provide its certificate using `SSLCertPath` or `SSLCert`.
+
+Use `SSLVerification=NONE` to disable certificate verification while maintaining
+an encrypted HTTPS connection:
 
 - `trino://localhost:8443/catalog?SSLVerification=NONE` → Uses HTTPS with certificate verification disabled
 
-For client certificate authentication (mutual TLS), use HTTPS and provide
-`SSLClientCertPath` and `SSLClientKeyPath` pointing to a PEM certificate and its
-private key:
+Client Certificate Authentication:
 
-```text
-trino://user@trino.example.com:8443/catalog/schema?SSLClientCertPath=/path/to/client.pem&SSLClientKeyPath=/path/to/client-key.pem
-```
-
-Alternatively, supply PEM contents through `SSLClientCert` and `SSLClientKey`.
-URI-encode inline PEM values. The certificate and key may each be supplied as a
-file or inline value; provide exactly one source for each. Server certificate
-verification still applies. Use `SSLCertPath` or `SSLCert` to trust a private CA.
+For mutual TLS, use HTTPS and provide the client certificate using
+`SSLClientCertPath` or `SSLClientCert`, and its private key using
+`SSLClientKeyPath` or `SSLClientKey`.
 
 See [Trino JDBC Documentation](https://trino.io/docs/current/client/jdbc.html#parameter-reference) for complete parameter reference and [Trino Concepts](https://trino.io/docs/current/overview/concepts.html#catalog) for more information.
 
