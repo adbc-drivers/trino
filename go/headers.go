@@ -15,10 +15,10 @@
 package trino
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/textproto"
 	"slices"
@@ -66,7 +66,6 @@ var reservedHeaders = map[string]struct{}{
 	"X-Trino-Time-Zone":           {},
 	"X-Trino-Transaction-Id":      {},
 	"X-Trino-User":                {},
-	statementHeadersParam:         {},
 }
 
 // parseHeaderOption returns the canonical header name for an option key with
@@ -122,32 +121,27 @@ func mergeClientTags(header string, tags []string) string {
 	return strings.Join(merged, ",")
 }
 
-// statementHeadersParam carries statement-level headers to headerTransport.
-// It is passed as a named argument, which trino-go-client sends as a header
-// on the request that submits the query (but not on follow-up requests), and
-// headerTransport removes it before the request is sent.  (sqlwrapper does not
-// propagate the query context, so it cannot be used.)
-const statementHeadersParam = "X-Trino-Adbc-Statement-Headers"
-
+// statementHeaders are the statement-level headers and client tags for a
+// query.  They are carried on the query context, which trino-go-client uses
+// for every request of the query.
 type statementHeaders struct {
-	Headers    map[string]string `json:"headers,omitempty"`
-	ClientTags []string          `json:"client_tags,omitempty"`
+	headers    map[string]string
+	clientTags []string
 }
 
-func (h statementHeaders) encode() string {
-	// Marshaling strings cannot fail.
-	data, _ := json.Marshal(h)
-	return base64.StdEncoding.EncodeToString(data)
-}
+type statementHeadersKey struct{}
 
-func decodeStatementHeaders(value string) (statementHeaders, error) {
-	var h statementHeaders
-	data, err := base64.StdEncoding.DecodeString(value)
-	if err != nil {
-		return h, err
+// withStatementHeaders returns a context carrying a copy of the statement
+// headers and client tags, so that later changes to the statement options do
+// not affect queries that are already running.
+func withStatementHeaders(ctx context.Context, headers map[string]string, clientTags []string) context.Context {
+	if len(headers) == 0 && len(clientTags) == 0 {
+		return ctx
 	}
-	err = json.Unmarshal(data, &h)
-	return h, err
+	return context.WithValue(ctx, statementHeadersKey{}, statementHeaders{
+		headers:    maps.Clone(headers),
+		clientTags: slices.Clone(clientTags),
+	})
 }
 
 // headerTransport sets the headers from driver options on requests to the
@@ -163,34 +157,24 @@ type headerTransport struct {
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	encoded := req.Header.Get(statementHeadersParam)
+	stmt, hasStmt := req.Context().Value(statementHeadersKey{}).(statementHeaders)
 	toServer := req.URL.Scheme == t.scheme && req.URL.Host == t.host
-	if encoded == "" && (!toServer || (t.sessionUser == nil && len(t.headers) == 0)) {
+	if !toServer || (t.sessionUser == nil && len(t.headers) == 0 && !hasStmt) {
 		return t.base.RoundTrip(req)
 	}
 
 	req = req.Clone(req.Context())
-	req.Header.Del(statementHeadersParam)
-	if !toServer {
-		return t.base.RoundTrip(req)
-	}
 	if t.sessionUser != nil {
 		req.Header.Set("X-Trino-User", *t.sessionUser)
 	}
 	for name, values := range t.headers {
 		req.Header[name] = slices.Clone(values)
 	}
-	if encoded != "" {
-		stmt, err := decodeStatementHeaders(encoded)
-		if err != nil {
-			return nil, fmt.Errorf("trino: invalid statement headers: %w", err)
-		}
-		for name, value := range stmt.Headers {
-			req.Header.Set(name, value)
-		}
-		if len(stmt.ClientTags) > 0 {
-			req.Header.Set(clientTagsHeader, mergeClientTags(req.Header.Get(clientTagsHeader), stmt.ClientTags))
-		}
+	for name, value := range stmt.headers {
+		req.Header.Set(name, value)
+	}
+	if len(stmt.clientTags) > 0 {
+		req.Header.Set(clientTagsHeader, mergeClientTags(req.Header.Get(clientTagsHeader), stmt.clientTags))
 	}
 	return t.base.RoundTrip(req)
 }

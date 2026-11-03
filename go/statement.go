@@ -24,6 +24,8 @@ import (
 	"unicode"
 
 	sqlwrapper "github.com/adbc-drivers/driverbase-go/sqlwrapper"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/trinodb/trino-go-client/trino"
 )
 
@@ -93,15 +95,25 @@ func (st *trinoStatement) SetOption(ctx context.Context, key, val string) error 
 }
 
 func (st *trinoStatement) GetAdditionalExecParams() []any {
-	params := []any{
+	return []any{
 		sql.Named("X-Trino-Progress-Callback", trinoProgressCallback{st}),
 		sql.Named("X-Trino-Progress-Callback-Period", 5*time.Second),
 	}
-	if len(st.headers) > 0 || len(st.clientTags) > 0 {
-		headers := statementHeaders{Headers: st.headers, ClientTags: st.clientTags}
-		params = append(params, sql.Named(statementHeadersParam, headers.encode()))
-	}
-	return params
+}
+
+// The statement headers and client tags are passed to headerTransport on the
+// query context.
+
+func (st *trinoStatement) ExecuteQuery(ctx context.Context) (array.RecordReader, int64, error) {
+	return st.StatementImplBase.ExecuteQuery(withStatementHeaders(ctx, st.headers, st.clientTags))
+}
+
+func (st *trinoStatement) ExecuteUpdate(ctx context.Context) (int64, error) {
+	return st.StatementImplBase.ExecuteUpdate(withStatementHeaders(ctx, st.headers, st.clientTags))
+}
+
+func (st *trinoStatement) ExecuteSchema(ctx context.Context) (*arrow.Schema, error) {
+	return st.StatementImplBase.ExecuteSchema(withStatementHeaders(ctx, st.headers, st.clientTags))
 }
 
 func (st *trinoStatement) MakeTypeConverter(vendorName string) sqlwrapper.TypeConverter {

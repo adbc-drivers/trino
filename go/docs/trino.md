@@ -138,9 +138,9 @@ digits are truncated to nanoseconds.
 `trino.statement.http_header.<Name>`
 : **Type:** string.
 
-  Send the HTTP header `<Name>` with the given value when submitting queries run by this statement. The header overrides one with the same name set by the driver or by `trino.http_header.<Name>`. The same headers as for `trino.http_header.<Name>` cannot be set. Set an empty string to remove the header.
+  Send the HTTP header `<Name>` with the given value on the requests of queries run by this statement. The header overrides one with the same name set by the driver or by `trino.http_header.<Name>`. The same headers as for `trino.http_header.<Name>` cannot be set. Set an empty string to remove the header.
 
-  Like `trino.statement.client_tags`, statement headers are only sent on the request that submits each query, not on the follow-up requests that fetch its results or cancel it; use `trino.http_header.<Name>` for headers that every request needs. Both options apply to every execution of the statement until they are changed, but are not applied by `AdbcStatementExecuteSchema`.
+  Like `trino.statement.client_tags`, statement headers are sent on every request of the query (submitting it, fetching its results, and cancelling it). Both options apply to every execution of the statement (including `AdbcStatementExecuteSchema` and bulk ingestion) until they are changed; changing them does not affect a query that is already running.
 
 `trino.statement.last_query_id`
 : **Read-only.** **Type:** string.

@@ -1101,14 +1101,13 @@ func TestHTTPHeaders(t *testing.T) {
 	reader.Release()
 	assert.Equal(t, []string{"conn,shared,stmt"}, srv.header(t, "SELECT 3", "X-Trino-Client-Tags"))
 	assert.Equal(t, []string{"statement"}, srv.header(t, "SELECT 3", "X-Gateway"))
-	assert.Empty(t, srv.header(t, "SELECT 3", "X-Trino-Adbc-Statement-Headers"))
 
-	// Statement options only apply to the request that submits the query;
-	// database headers apply to every request.
-	assert.Equal(t, []string{"conn,shared"}, srv.header(t, "GET SELECT 3", "X-Trino-Client-Tags"))
-	assert.Equal(t, []string{"database"}, srv.header(t, "GET SELECT 3", "X-Gateway"))
+	// Statement options and database headers also apply to the follow-up
+	// requests of the query.
+	assert.Equal(t, []string{"conn,shared,stmt"}, srv.header(t, "GET SELECT 3", "X-Trino-Client-Tags"))
+	assert.Equal(t, []string{"statement"}, srv.header(t, "GET SELECT 3", "X-Gateway"))
+	assert.Equal(t, []string{"database"}, srv.header(t, "GET SELECT 3", "X-Other"))
 	assert.Equal(t, []string{"my-source"}, srv.header(t, "GET SELECT 3", "X-Trino-Source"))
-	assert.Empty(t, srv.header(t, "GET SELECT 3", "X-Trino-Adbc-Statement-Headers"))
 
 	// The raw header replaces the connection client tags; client_tags are
 	// still merged into it.
@@ -1154,6 +1153,25 @@ func TestHTTPHeadersIngest(t *testing.T) {
 		assert.Equal(t, []string{"conn,shared,ingest"}, srv.header(t, query, "X-Trino-Client-Tags"), query)
 	}
 	assert.True(t, sawInsert, "no INSERT among %q", queries)
+}
+
+func TestHTTPHeadersExecuteSchema(t *testing.T) {
+	ctx := context.Background()
+	srv := newFakeTrinoServer(t)
+	stmt := openFakeTrino(t, srv, nil)
+
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "schema"))
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", "statement"))
+	require.NoError(t, stmt.SetSqlQuery(ctx, "SELECT 1"))
+	schema, err := stmt.(adbc.StatementExecuteSchema).ExecuteSchema(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, schema)
+
+	// ExecuteSchema runs a rewritten query, so look it up.
+	queries := srv.queries()
+	require.Len(t, queries, 1)
+	assert.Equal(t, []string{"conn,shared,schema"}, srv.header(t, queries[0], "X-Trino-Client-Tags"))
+	assert.Equal(t, []string{"statement"}, srv.header(t, queries[0], "X-Gateway"))
 }
 
 func TestHTTPHeaderOptions(t *testing.T) {
