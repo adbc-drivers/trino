@@ -163,7 +163,7 @@ def test_query_id_ingest_batch_size(driver, conn) -> None:
 
 def get_last_query_info(cursor) -> dict:
     """Get the last query's info from the Trino REST API, using the same
-    server, transport and CA certificate as the validation connection."""
+    server, transport and certificates as the validation connection."""
     host = os.environ.get("TRINO_HOST")
     port = os.environ.get("TRINO_PORT")
     scheme = os.environ.get("TRINO_SSL_MODE", "").lower()
@@ -174,6 +174,11 @@ def get_last_query_info(cursor) -> dict:
         context = ssl.create_default_context(
             cafile=os.environ.get("TRINO_SSL_CERT_PATH") or None
         )
+        client_cert = os.environ.get("TRINO_SSL_CLIENT_CERT_PATH")
+        if client_cert:
+            context.load_cert_chain(
+                client_cert, os.environ.get("TRINO_SSL_CLIENT_KEY_PATH") or None
+            )
 
     query_id = cursor.adbc_statement.get_option("trino.statement.last_query_id")
     request = urllib.request.Request(
