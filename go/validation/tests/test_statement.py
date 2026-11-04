@@ -184,7 +184,7 @@ def get_last_query_info(cursor) -> dict:
         return json.load(response)
 
 
-def test_statement_client_tags(driver_path: str, db_kwargs: dict) -> None:
+def test_statement_client_tags_header(driver_path: str, db_kwargs: dict) -> None:
     uri = db_kwargs["uri"]
     uri += ("&" if "?" in uri else "?") + "clientTags=conn,shared"
     with (
@@ -200,21 +200,9 @@ def test_statement_client_tags(driver_path: str, db_kwargs: dict) -> None:
         info = get_last_query_info(cursor)
         assert sorted(info["session"]["clientTags"]) == ["conn", "shared"]
 
-        # Statement client tags are merged with the connection client tags
+        # The header replaces the connection client tags
         cursor.adbc_statement.set_options(
-            **{"trino.statement.client_tags": "shared,stmt"}
-        )
-        cursor.execute("SELECT 1")
-        cursor.fetchall()
-        info = get_last_query_info(cursor)
-        assert sorted(info["session"]["clientTags"]) == ["conn", "shared", "stmt"]
-
-        # The raw header replaces the connection client tags
-        cursor.adbc_statement.set_options(
-            **{
-                "trino.statement.client_tags": "",
-                "trino.statement.http_header.X-Trino-Client-Tags": "raw",
-            }
+            **{"trino.statement.http_header.X-Trino-Client-Tags": "raw"}
         )
         cursor.execute("SELECT 1")
         cursor.fetchall()

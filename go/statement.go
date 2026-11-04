@@ -34,8 +34,7 @@ type trinoStatement struct {
 
 	lastQueryId atomic.Pointer[string]
 
-	headers    map[string]string
-	clientTags []string
+	headers map[string]string
 }
 
 func (st *trinoStatement) SetSqlQuery(ctx context.Context, query string) error {
@@ -54,8 +53,6 @@ func (st *trinoStatement) GetOption(ctx context.Context, key string) (string, er
 			return "", nil
 		}
 		return *val, nil
-	case key == optionStatementClientTags:
-		return strings.Join(st.clientTags, ","), nil
 	case strings.HasPrefix(key, optionStatementHTTPHeaderPrefix):
 		name := textproto.CanonicalMIMEHeaderKey(strings.TrimPrefix(key, optionStatementHTTPHeaderPrefix))
 		return st.headers[name], nil
@@ -65,17 +62,6 @@ func (st *trinoStatement) GetOption(ctx context.Context, key string) (string, er
 
 func (st *trinoStatement) SetOption(ctx context.Context, key, val string) error {
 	switch {
-	case key == optionStatementClientTags:
-		if val == "" {
-			st.clientTags = nil
-			return nil
-		}
-		tags, err := parseClientTags(val)
-		if err != nil {
-			return st.Base().ErrorHelper.InvalidArgument("invalid option %s: %s", key, err)
-		}
-		st.clientTags = tags
-		return nil
 	case strings.HasPrefix(key, optionStatementHTTPHeaderPrefix):
 		name, err := parseHeaderOption(key, optionStatementHTTPHeaderPrefix, val)
 		if err != nil {
@@ -101,19 +87,18 @@ func (st *trinoStatement) GetAdditionalExecParams() []any {
 	}
 }
 
-// The statement headers and client tags are passed to headerTransport on the
-// query context.
+// The statement headers are passed to headerTransport on the query context.
 
 func (st *trinoStatement) ExecuteQuery(ctx context.Context) (array.RecordReader, int64, error) {
-	return st.StatementImplBase.ExecuteQuery(withStatementHeaders(ctx, st.headers, st.clientTags))
+	return st.StatementImplBase.ExecuteQuery(withStatementHeaders(ctx, st.headers))
 }
 
 func (st *trinoStatement) ExecuteUpdate(ctx context.Context) (int64, error) {
-	return st.StatementImplBase.ExecuteUpdate(withStatementHeaders(ctx, st.headers, st.clientTags))
+	return st.StatementImplBase.ExecuteUpdate(withStatementHeaders(ctx, st.headers))
 }
 
 func (st *trinoStatement) ExecuteSchema(ctx context.Context) (*arrow.Schema, error) {
-	return st.StatementImplBase.ExecuteSchema(withStatementHeaders(ctx, st.headers, st.clientTags))
+	return st.StatementImplBase.ExecuteSchema(withStatementHeaders(ctx, st.headers))
 }
 
 func (st *trinoStatement) MakeTypeConverter(vendorName string) sqlwrapper.TypeConverter {

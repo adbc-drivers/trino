@@ -16,7 +16,6 @@ package trino
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -30,9 +29,6 @@ import (
 const (
 	optionHTTPHeaderPrefix          = "trino.http_header."
 	optionStatementHTTPHeaderPrefix = "trino.statement.http_header."
-	optionStatementClientTags       = "trino.statement.client_tags"
-
-	clientTagsHeader = "X-Trino-Client-Tags"
 )
 
 // reservedHeaders are managed by trino-go-client (which tracks the state of
@@ -85,69 +81,24 @@ func parseHeaderOption(key, prefix, value string) (string, error) {
 	return name, nil
 }
 
-// parseClientTags splits a comma-separated list of client tags, removing
-// duplicates.
-func parseClientTags(value string) ([]string, error) {
-	var tags []string
-	for tag := range strings.SplitSeq(value, ",") {
-		tag = strings.TrimSpace(tag)
-		if tag == "" {
-			return nil, errors.New("client tags must not be empty")
-		}
-		if !httpguts.ValidHeaderFieldValue(tag) {
-			return nil, fmt.Errorf("invalid client tag %q", tag)
-		}
-		if !slices.Contains(tags, tag) {
-			tags = append(tags, tag)
-		}
-	}
-	return tags, nil
-}
-
-// mergeClientTags appends tags to the comma-separated header value, skipping
-// tags that are already present.
-func mergeClientTags(header string, tags []string) string {
-	var merged []string
-	for tag := range strings.SplitSeq(header, ",") {
-		if tag = strings.TrimSpace(tag); tag != "" && !slices.Contains(merged, tag) {
-			merged = append(merged, tag)
-		}
-	}
-	for _, tag := range tags {
-		if !slices.Contains(merged, tag) {
-			merged = append(merged, tag)
-		}
-	}
-	return strings.Join(merged, ",")
-}
-
-// statementHeaders are the statement-level headers and client tags for a
+// statementHeadersKey is the context key for the statement-level headers of a
 // query.  They are carried on the query context, which trino-go-client uses
 // for every request of the query.
-type statementHeaders struct {
-	headers    map[string]string
-	clientTags []string
-}
-
 type statementHeadersKey struct{}
 
 // withStatementHeaders returns a context carrying a copy of the statement
-// headers and client tags, so that later changes to the statement options do
-// not affect queries that are already running.
-func withStatementHeaders(ctx context.Context, headers map[string]string, clientTags []string) context.Context {
-	if len(headers) == 0 && len(clientTags) == 0 {
+// headers, so that later changes to the statement options do not affect
+// queries that are already running.
+func withStatementHeaders(ctx context.Context, headers map[string]string) context.Context {
+	if len(headers) == 0 {
 		return ctx
 	}
-	return context.WithValue(ctx, statementHeadersKey{}, statementHeaders{
-		headers:    maps.Clone(headers),
-		clientTags: slices.Clone(clientTags),
-	})
+	return context.WithValue(ctx, statementHeadersKey{}, maps.Clone(headers))
 }
 
 // headerTransport sets the headers from driver options on requests to the
 // Trino server.  Database-level headers override those set by
-// trino-go-client, statement-level headers override database-level ones,
-// and statement client tags are merged into the resulting client tags.
+// trino-go-client, and statement-level headers override database-level ones.
 type headerTransport struct {
 	base        http.RoundTripper
 	scheme      string
@@ -157,7 +108,7 @@ type headerTransport struct {
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	stmt, hasStmt := req.Context().Value(statementHeadersKey{}).(statementHeaders)
+	stmtHeaders, hasStmt := req.Context().Value(statementHeadersKey{}).(map[string]string)
 	toServer := req.URL.Scheme == t.scheme && req.URL.Host == t.host
 	if !toServer || (t.sessionUser == nil && len(t.headers) == 0 && !hasStmt) {
 		return t.base.RoundTrip(req)
@@ -170,11 +121,8 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	for name, values := range t.headers {
 		req.Header[name] = slices.Clone(values)
 	}
-	for name, value := range stmt.headers {
+	for name, value := range stmtHeaders {
 		req.Header.Set(name, value)
-	}
-	if len(stmt.clientTags) > 0 {
-		req.Header.Set(clientTagsHeader, mergeClientTags(req.Header.Get(clientTagsHeader), stmt.clientTags))
 	}
 	return t.base.RoundTrip(req)
 }

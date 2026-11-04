@@ -1083,11 +1083,9 @@ func TestHTTPHeaders(t *testing.T) {
 	assert.Equal(t, []string{"my-source"}, srv.header(t, "SELECT 1", "X-Trino-Source"))
 	assert.Equal(t, []string{"alice"}, srv.header(t, "SELECT 1", "X-Trino-User"))
 
-	// Statement client tags are merged with the connection client tags.
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "shared, stmt"))
 	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", "statement"))
 	execute("SELECT 2")
-	assert.Equal(t, []string{"conn,shared,stmt"}, srv.header(t, "SELECT 2", "X-Trino-Client-Tags"))
+	assert.Equal(t, []string{"conn,shared"}, srv.header(t, "SELECT 2", "X-Trino-Client-Tags"))
 	assert.Equal(t, []string{"statement"}, srv.header(t, "SELECT 2", "X-Gateway"))
 	assert.Equal(t, []string{"database"}, srv.header(t, "SELECT 2", "X-Other"))
 
@@ -1099,32 +1097,25 @@ func TestHTTPHeaders(t *testing.T) {
 	}
 	require.NoError(t, reader.Err())
 	reader.Release()
-	assert.Equal(t, []string{"conn,shared,stmt"}, srv.header(t, "SELECT 3", "X-Trino-Client-Tags"))
 	assert.Equal(t, []string{"statement"}, srv.header(t, "SELECT 3", "X-Gateway"))
 
-	// Statement options and database headers also apply to the follow-up
-	// requests of the query.
-	assert.Equal(t, []string{"conn,shared,stmt"}, srv.header(t, "GET SELECT 3", "X-Trino-Client-Tags"))
+	// Statement and database headers also apply to the follow-up requests of
+	// the query.
 	assert.Equal(t, []string{"statement"}, srv.header(t, "GET SELECT 3", "X-Gateway"))
 	assert.Equal(t, []string{"database"}, srv.header(t, "GET SELECT 3", "X-Other"))
 	assert.Equal(t, []string{"my-source"}, srv.header(t, "GET SELECT 3", "X-Trino-Source"))
 
-	// The raw header replaces the connection client tags; client_tags are
-	// still merged into it.
+	// The header replaces the connection client tags.
 	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Trino-Client-Tags", "raw"))
 	execute("SELECT 4")
-	assert.Equal(t, []string{"raw,shared,stmt"}, srv.header(t, "SELECT 4", "X-Trino-Client-Tags"))
-
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", ""))
-	execute("SELECT 5")
-	assert.Equal(t, []string{"raw"}, srv.header(t, "SELECT 5", "X-Trino-Client-Tags"))
+	assert.Equal(t, []string{"raw"}, srv.header(t, "SELECT 4", "X-Trino-Client-Tags"))
 
 	// An empty value clears the option.
 	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Trino-Client-Tags", ""))
 	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", ""))
-	execute("SELECT 6")
-	assert.Equal(t, []string{"conn,shared"}, srv.header(t, "SELECT 6", "X-Trino-Client-Tags"))
-	assert.Equal(t, []string{"database"}, srv.header(t, "SELECT 6", "X-Gateway"))
+	execute("SELECT 5")
+	assert.Equal(t, []string{"conn,shared"}, srv.header(t, "SELECT 5", "X-Trino-Client-Tags"))
+	assert.Equal(t, []string{"database"}, srv.header(t, "SELECT 5", "X-Gateway"))
 }
 
 func TestHTTPHeadersIngest(t *testing.T) {
@@ -1137,20 +1128,20 @@ func TestHTTPHeadersIngest(t *testing.T) {
 	}, nil)
 	batch := testutil.RecordFromJSON(t, memory.DefaultAllocator, schema, `[{"ints": 1}, {"ints": 2}]`)
 	defer batch.Release()
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "ingest"))
+	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", "ingest"))
 	require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, "foo"))
 	require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestMode, adbc.OptionValueIngestModeReplace))
 	require.NoError(t, stmt.Bind(ctx, batch))
 	_, err := stmt.ExecuteUpdate(ctx)
 	require.NoError(t, err)
 
-	// Every query run by the ingest (drop, create, insert) carries the tags.
+	// Every query run by the ingest (drop, create, insert) carries the header.
 	queries := srv.queries()
 	require.NotEmpty(t, queries)
 	var sawInsert bool
 	for _, query := range queries {
 		sawInsert = sawInsert || strings.Contains(query, "INSERT")
-		assert.Equal(t, []string{"conn,shared,ingest"}, srv.header(t, query, "X-Trino-Client-Tags"), query)
+		assert.Equal(t, []string{"ingest"}, srv.header(t, query, "X-Gateway"), query)
 	}
 	assert.True(t, sawInsert, "no INSERT among %q", queries)
 }
@@ -1160,7 +1151,6 @@ func TestHTTPHeadersExecuteSchema(t *testing.T) {
 	srv := newFakeTrinoServer(t)
 	stmt := openFakeTrino(t, srv, nil)
 
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "schema"))
 	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", "statement"))
 	require.NoError(t, stmt.SetSqlQuery(ctx, "SELECT 1"))
 	schema, err := stmt.(adbc.StatementExecuteSchema).ExecuteSchema(ctx)
@@ -1170,7 +1160,6 @@ func TestHTTPHeadersExecuteSchema(t *testing.T) {
 	// ExecuteSchema runs a rewritten query, so look it up.
 	queries := srv.queries()
 	require.Len(t, queries, 1)
-	assert.Equal(t, []string{"conn,shared,schema"}, srv.header(t, queries[0], "X-Trino-Client-Tags"))
 	assert.Equal(t, []string{"statement"}, srv.header(t, queries[0], "X-Gateway"))
 }
 
@@ -1180,17 +1169,8 @@ func TestHTTPHeaderOptions(t *testing.T) {
 	stmt := openFakeTrino(t, srv, nil)
 	getter := stmt.(adbc.GetSetOptionsWithContext)
 
-	val, err := getter.GetOption(ctx, "trino.statement.client_tags")
-	require.NoError(t, err)
-	assert.Equal(t, "", val)
-
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.client_tags", "a, b, a"))
-	val, err = getter.GetOption(ctx, "trino.statement.client_tags")
-	require.NoError(t, err)
-	assert.Equal(t, "a,b", val)
-
 	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.x-gateway", "value"))
-	val, err = getter.GetOption(ctx, "trino.statement.http_header.X-Gateway")
+	val, err := getter.GetOption(ctx, "trino.statement.http_header.X-Gateway")
 	require.NoError(t, err)
 	assert.Equal(t, "value", val)
 
@@ -1213,9 +1193,6 @@ func TestHTTPHeaderOptions(t *testing.T) {
 	for _, tc := range []struct {
 		key, value string
 	}{
-		{"trino.statement.client_tags", "a,,b"},
-		{"trino.statement.client_tags", " "},
-		{"trino.statement.client_tags", "a\nb"},
 		{"trino.statement.http_header.Accept-Encoding", "gzip"},
 		{"trino.statement.http_header.Connection", "close"},
 		{"trino.statement.http_header.X-Trino-User", "someone"},

@@ -23,18 +23,15 @@ import (
 
 func TestWithStatementHeaders(t *testing.T) {
 	ctx := context.Background()
-	assert.Equal(t, ctx, withStatementHeaders(ctx, nil, nil))
+	assert.Equal(t, ctx, withStatementHeaders(ctx, nil))
 
 	// The context keeps a copy, so a running query is not affected by later
 	// changes to the statement options.
 	headers := map[string]string{"X-Gateway": "statement"}
-	tags := []string{"a", "b"}
-	ctx = withStatementHeaders(ctx, headers, tags)
+	ctx = withStatementHeaders(ctx, headers)
 	headers["X-Gateway"] = "changed"
-	tags[0] = "changed"
 
-	stmt, ok := ctx.Value(statementHeadersKey{}).(statementHeaders)
+	stmtHeaders, ok := ctx.Value(statementHeadersKey{}).(map[string]string)
 	assert.True(t, ok)
-	assert.Equal(t, map[string]string{"X-Gateway": "statement"}, stmt.headers)
-	assert.Equal(t, []string{"a", "b"}, stmt.clientTags)
+	assert.Equal(t, map[string]string{"X-Gateway": "statement"}, stmtHeaders)
 }
