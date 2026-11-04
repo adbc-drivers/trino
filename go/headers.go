@@ -20,7 +20,6 @@ import (
 	"maps"
 	"net/http"
 	"net/textproto"
-	"slices"
 	"strings"
 
 	"golang.org/x/net/http/httpguts"
@@ -97,29 +96,26 @@ func withStatementHeaders(ctx context.Context, headers map[string]string) contex
 }
 
 // headerTransport sets the headers from driver options on requests to the
-// Trino server.  Database-level headers override those set by
-// trino-go-client, and statement-level headers override database-level ones.
+// Trino server.  Database-level headers (including X-Trino-User for the
+// session user) override those set by trino-go-client, and statement-level
+// headers override database-level ones.  Header names are canonical.
 type headerTransport struct {
-	base        http.RoundTripper
-	scheme      string
-	host        string
-	sessionUser *string
-	headers     http.Header
+	base    http.RoundTripper
+	scheme  string
+	host    string
+	headers map[string]string
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	stmtHeaders, hasStmt := req.Context().Value(statementHeadersKey{}).(map[string]string)
+	stmtHeaders, _ := req.Context().Value(statementHeadersKey{}).(map[string]string)
 	toServer := req.URL.Scheme == t.scheme && req.URL.Host == t.host
-	if !toServer || (t.sessionUser == nil && len(t.headers) == 0 && !hasStmt) {
+	if !toServer || (len(t.headers) == 0 && len(stmtHeaders) == 0) {
 		return t.base.RoundTrip(req)
 	}
 
 	req = req.Clone(req.Context())
-	if t.sessionUser != nil {
-		req.Header.Set("X-Trino-User", *t.sessionUser)
-	}
-	for name, values := range t.headers {
-		req.Header[name] = slices.Clone(values)
+	for name, value := range t.headers {
+		req.Header.Set(name, value)
 	}
 	for name, value := range stmtHeaders {
 		req.Header.Set(name, value)

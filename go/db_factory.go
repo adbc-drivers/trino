@@ -112,17 +112,15 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 		base:    transport,
 		scheme:  serverURL.Scheme,
 		host:    serverURL.Host,
-		headers: http.Header{},
+		headers: map[string]string{},
 	}
 	fmt.Fprintf(&httpClientName, "|scheme=%q|host=%q", serverURL.Scheme, serverURL.Host)
-	var sessionUser string
-	var hasSessionUser bool
 	seenHeaders := map[string]bool{}
 	for key, value := range opts {
 		switch {
 		case key == "trino.session_user", key == "trino.impersonation_user":
-			sessionUser = value
-			hasSessionUser = true
+			// X-Trino-User is reserved, so it cannot clash with a header option.
+			rt.headers["X-Trino-User"] = value
 		case strings.HasPrefix(key, optionHTTPHeaderPrefix):
 			name, err := parseHeaderOption(key, optionHTTPHeaderPrefix, value)
 			if err != nil {
@@ -134,16 +132,12 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 			seenHeaders[name] = true
 			// As for statement options, an empty value means the header is not set.
 			if value != "" {
-				rt.headers.Set(name, value)
+				rt.headers[name] = value
 			}
 		}
 	}
-	if hasSessionUser {
-		rt.sessionUser = &sessionUser
-		fmt.Fprintf(&httpClientName, "|session_user=%q", sessionUser)
-	}
 	for _, name := range slices.Sorted(maps.Keys(rt.headers)) {
-		fmt.Fprintf(&httpClientName, "|header=%q:%q", name, rt.headers.Get(name))
+		fmt.Fprintf(&httpClientName, "|header=%q:%q", name, rt.headers[name])
 	}
 	customClient := &http.Client{
 		Timeout:   timeout,
