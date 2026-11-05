@@ -61,23 +61,22 @@ func (st *trinoStatement) GetOption(ctx context.Context, key string) (string, er
 }
 
 func (st *trinoStatement) SetOption(ctx context.Context, key, val string) error {
-	switch {
-	case strings.HasPrefix(key, optionHTTPHeaderPrefix):
-		name, err := parseHeaderOption(key, optionHTTPHeaderPrefix, val)
-		if err != nil {
-			return st.Base().ErrorHelper.InvalidArgument("invalid option %s: %s", key, err)
-		}
-		if val == "" {
-			delete(st.headers, name)
-			return nil
-		}
-		if st.headers == nil {
-			st.headers = map[string]string{}
-		}
-		st.headers[name] = val
+	if !strings.HasPrefix(key, optionHTTPHeaderPrefix) {
+		return st.StatementImplBase.SetOption(ctx, key, val)
+	}
+	name, err := parseHeaderOption(key, val)
+	if err != nil {
+		return st.Base().ErrorHelper.InvalidArgument("invalid option %s: %s", key, err)
+	}
+	if val == "" {
+		delete(st.headers, name)
 		return nil
 	}
-	return st.StatementImplBase.SetOption(ctx, key, val)
+	if st.headers == nil {
+		st.headers = map[string]string{}
+	}
+	st.headers[name] = val
+	return nil
 }
 
 func (st *trinoStatement) GetAdditionalExecParams() []any {

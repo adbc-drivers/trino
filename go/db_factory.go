@@ -122,7 +122,7 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 			// X-Trino-User is reserved, so it cannot clash with a header option.
 			rt.headers["X-Trino-User"] = value
 		case strings.HasPrefix(key, optionHTTPHeaderPrefix):
-			name, err := parseHeaderOption(key, optionHTTPHeaderPrefix, value)
+			name, err := parseHeaderOption(key, value)
 			if err != nil {
 				return "", fmt.Errorf("invalid option %s: %w", key, err)
 			}

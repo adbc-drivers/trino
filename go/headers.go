@@ -25,11 +25,9 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-const (
-	// optionHTTPHeaderPrefix is the prefix of the HTTP header options, which
-	// can be set on the database and on statements.
-	optionHTTPHeaderPrefix = "trino.http_header."
-)
+// optionHTTPHeaderPrefix is the prefix of the HTTP header options, which can be
+// set on the database and on statements.
+const optionHTTPHeaderPrefix = "trino.http_header."
 
 // reservedHeaders are managed by trino-go-client (which tracks the state of
 // most of them across requests) or by net/http, or are hop-by-hop headers,
@@ -64,10 +62,10 @@ var reservedHeaders = map[string]struct{}{
 	"X-Trino-User":                {},
 }
 
-// parseHeaderOption returns the canonical header name for an option key with
-// the given prefix, and checks that the header may be set by the user.
-func parseHeaderOption(key, prefix, value string) (string, error) {
-	name := strings.TrimPrefix(key, prefix)
+// parseHeaderOption returns the canonical header name for an HTTP header option
+// key, and checks that the header may be set by the user.
+func parseHeaderOption(key, value string) (string, error) {
+	name := strings.TrimPrefix(key, optionHTTPHeaderPrefix)
 	if !httpguts.ValidHeaderFieldName(name) {
 		return "", fmt.Errorf("invalid HTTP header name %q", name)
 	}
