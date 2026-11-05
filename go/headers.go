@@ -18,8 +18,10 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strings"
 
 	"golang.org/x/net/http/httpguts"
@@ -62,14 +64,19 @@ var reservedHeaders = map[string]struct{}{
 	"X-Trino-User":                {},
 }
 
+// headerOptionName returns the canonical header name for an HTTP header option
+// key, without validating it.
+func headerOptionName(key string) string {
+	return textproto.CanonicalMIMEHeaderKey(strings.TrimPrefix(key, optionHTTPHeaderPrefix))
+}
+
 // parseHeaderOption returns the canonical header name for an HTTP header option
 // key, and checks that the header may be set by the user.
 func parseHeaderOption(key, value string) (string, error) {
-	name := strings.TrimPrefix(key, optionHTTPHeaderPrefix)
-	if !httpguts.ValidHeaderFieldName(name) {
-		return "", fmt.Errorf("invalid HTTP header name %q", name)
+	if raw := strings.TrimPrefix(key, optionHTTPHeaderPrefix); !httpguts.ValidHeaderFieldName(raw) {
+		return "", fmt.Errorf("invalid HTTP header name %q", raw)
 	}
-	name = textproto.CanonicalMIMEHeaderKey(name)
+	name := headerOptionName(key)
 	if _, ok := reservedHeaders[name]; ok {
 		return "", fmt.Errorf("HTTP header %s is managed by the driver and cannot be set", name)
 	}
@@ -101,13 +108,29 @@ func withStatementHeaders(ctx context.Context, headers map[string]string) contex
 type headerTransport struct {
 	base    http.RoundTripper
 	scheme  string
-	host    string
+	host    string // as returned by serverHost
 	headers map[string]string
+}
+
+// serverHost returns the host and port of u in a normal form (lowercase host,
+// explicit default port), so that the server's URIs match the server URI
+// whether or not they spell out the default port.
+func serverHost(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		switch strings.ToLower(u.Scheme) {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		}
+	}
+	return net.JoinHostPort(strings.ToLower(u.Hostname()), port)
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	stmtHeaders, _ := req.Context().Value(statementHeadersKey{}).(map[string]string)
-	toServer := req.URL.Scheme == t.scheme && req.URL.Host == t.host
+	toServer := strings.EqualFold(req.URL.Scheme, t.scheme) && serverHost(req.URL) == t.host
 	if !toServer || (len(t.headers) == 0 && len(stmtHeaders) == 0) {
 		return t.base.RoundTrip(req)
 	}

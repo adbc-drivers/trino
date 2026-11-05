@@ -17,7 +17,6 @@ package trino
 import (
 	"context"
 	"database/sql"
-	"net/textproto"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -54,8 +53,7 @@ func (st *trinoStatement) GetOption(ctx context.Context, key string) (string, er
 		}
 		return *val, nil
 	case strings.HasPrefix(key, optionHTTPHeaderPrefix):
-		name := textproto.CanonicalMIMEHeaderKey(strings.TrimPrefix(key, optionHTTPHeaderPrefix))
-		return st.headers[name], nil
+		return st.headers[headerOptionName(key)], nil
 	}
 	return st.StatementImplBase.GetOption(ctx, key)
 }

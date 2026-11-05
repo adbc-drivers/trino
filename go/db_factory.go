@@ -111,10 +111,10 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 	rt := &headerTransport{
 		base:    transport,
 		scheme:  serverURL.Scheme,
-		host:    serverURL.Host,
+		host:    serverHost(serverURL),
 		headers: map[string]string{},
 	}
-	fmt.Fprintf(&httpClientName, "|scheme=%q|host=%q", serverURL.Scheme, serverURL.Host)
+	fmt.Fprintf(&httpClientName, "|scheme=%q|host=%q", rt.scheme, rt.host)
 	seenHeaders := map[string]bool{}
 	for key, value := range opts {
 		switch {
@@ -136,8 +136,14 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 			}
 		}
 	}
-	for _, name := range slices.Sorted(maps.Keys(rt.headers)) {
-		fmt.Fprintf(&httpClientName, "|header=%q:%q", name, rt.headers[name])
+	if len(rt.headers) > 0 {
+		// Hash the headers, as for the client certificate: their values may be
+		// secrets, and the client name ends up in the DSN.
+		h := sha256.New()
+		for _, name := range slices.Sorted(maps.Keys(rt.headers)) {
+			fmt.Fprintf(h, "%q:%q\n", name, rt.headers[name])
+		}
+		fmt.Fprintf(&httpClientName, "|headers=%x", h.Sum(nil))
 	}
 	customClient := &http.Client{
 		Timeout:   timeout,

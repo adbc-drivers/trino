@@ -16,6 +16,7 @@ package trino
 
 import (
 	"context"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,4 +35,18 @@ func TestWithStatementHeaders(t *testing.T) {
 	stmtHeaders, ok := ctx.Value(statementHeadersKey{}).(map[string]string)
 	assert.True(t, ok)
 	assert.Equal(t, map[string]string{"X-Gateway": "statement"}, stmtHeaders)
+}
+
+func TestServerHost(t *testing.T) {
+	for _, tc := range []struct{ uri, want string }{
+		{"https://trino.example.com", "trino.example.com:443"},
+		{"https://Trino.Example.com:443/v1/statement", "trino.example.com:443"},
+		{"http://localhost", "localhost:80"},
+		{"http://localhost:8080", "localhost:8080"},
+		{"http://[::1]:8080", "[::1]:8080"},
+	} {
+		u, err := url.Parse(tc.uri)
+		assert.NoError(t, err)
+		assert.Equal(t, tc.want, serverHost(u), tc.uri)
+	}
 }
