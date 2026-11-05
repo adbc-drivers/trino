@@ -23,6 +23,8 @@ import (
 	"unicode"
 
 	sqlwrapper "github.com/adbc-drivers/driverbase-go/sqlwrapper"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/trinodb/trino-go-client/trino"
 )
 
@@ -30,6 +32,8 @@ type trinoStatement struct {
 	*sqlwrapper.StatementImplBase
 
 	lastQueryId atomic.Pointer[string]
+
+	headers map[string]string
 }
 
 func (st *trinoStatement) SetSqlQuery(ctx context.Context, query string) error {
@@ -41,15 +45,36 @@ func (st *trinoStatement) SetSqlQuery(ctx context.Context, query string) error {
 }
 
 func (st *trinoStatement) GetOption(ctx context.Context, key string) (string, error) {
-	switch key {
-	case "trino.statement.last_query_id":
+	switch {
+	case key == "trino.statement.last_query_id":
 		val := st.lastQueryId.Load()
 		if val == nil {
 			return "", nil
 		}
 		return *val, nil
+	case strings.HasPrefix(key, optionHTTPHeaderPrefix):
+		return st.headers[headerOptionName(key)], nil
 	}
 	return st.StatementImplBase.GetOption(ctx, key)
+}
+
+func (st *trinoStatement) SetOption(ctx context.Context, key, val string) error {
+	if !strings.HasPrefix(key, optionHTTPHeaderPrefix) {
+		return st.StatementImplBase.SetOption(ctx, key, val)
+	}
+	name, err := parseHeaderOption(key, val)
+	if err != nil {
+		return st.Base().ErrorHelper.InvalidArgument("invalid option %s: %s", key, err)
+	}
+	if val == "" {
+		delete(st.headers, name)
+		return nil
+	}
+	if st.headers == nil {
+		st.headers = map[string]string{}
+	}
+	st.headers[name] = val
+	return nil
 }
 
 func (st *trinoStatement) GetAdditionalExecParams() []any {
@@ -57,6 +82,20 @@ func (st *trinoStatement) GetAdditionalExecParams() []any {
 		sql.Named("X-Trino-Progress-Callback", trinoProgressCallback{st}),
 		sql.Named("X-Trino-Progress-Callback-Period", 5*time.Second),
 	}
+}
+
+// The statement headers are passed to headerTransport on the query context.
+
+func (st *trinoStatement) ExecuteQuery(ctx context.Context) (array.RecordReader, int64, error) {
+	return st.StatementImplBase.ExecuteQuery(withStatementHeaders(ctx, st.headers))
+}
+
+func (st *trinoStatement) ExecuteUpdate(ctx context.Context) (int64, error) {
+	return st.StatementImplBase.ExecuteUpdate(withStatementHeaders(ctx, st.headers))
+}
+
+func (st *trinoStatement) ExecuteSchema(ctx context.Context) (*arrow.Schema, error) {
+	return st.StatementImplBase.ExecuteSchema(withStatementHeaders(ctx, st.headers))
 }
 
 func (st *trinoStatement) MakeTypeConverter(vendorName string) sqlwrapper.TypeConverter {

@@ -17,8 +17,8 @@ module github.com/adbc-drivers/trino
 go 1.27.3
 
 require (
-	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20261025235621-8d02e9bfbb92
-	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20261025235621-8d02e9bfbb92
+	github.com/adbc-drivers/driverbase-go/driverbase v0.0.0-20261103161416-9cc23c8e2fb8
+	github.com/adbc-drivers/driverbase-go/sqlwrapper v0.0.0-20261103161416-9cc23c8e2fb8
 	github.com/adbc-drivers/driverbase-go/testutil v0.0.0-20260621223149-c33f25554eb6
 	github.com/adbc-drivers/driverbase-go/validation v0.0.0-20260621223149-c33f25554eb6
 	github.com/apache/arrow-adbc/go/adbc v1.13.0
@@ -26,6 +26,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.12.1
 	github.com/trinodb/trino-go-client v1.4.1
+	golang.org/x/net v0.62.0
 )
 
 require (
@@ -35,7 +36,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/goccy/go-json v0.11.2 // indirect
+	github.com/goccy/go-json v0.12.0 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.4 // indirect
@@ -64,7 +65,6 @@ require (
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/mod v0.42.0 // indirect
-	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
