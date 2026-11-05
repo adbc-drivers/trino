@@ -53,8 +53,8 @@ func (st *trinoStatement) GetOption(ctx context.Context, key string) (string, er
 			return "", nil
 		}
 		return *val, nil
-	case strings.HasPrefix(key, optionStatementHTTPHeaderPrefix):
-		name := textproto.CanonicalMIMEHeaderKey(strings.TrimPrefix(key, optionStatementHTTPHeaderPrefix))
+	case strings.HasPrefix(key, optionHTTPHeaderPrefix):
+		name := textproto.CanonicalMIMEHeaderKey(strings.TrimPrefix(key, optionHTTPHeaderPrefix))
 		return st.headers[name], nil
 	}
 	return st.StatementImplBase.GetOption(ctx, key)
@@ -62,8 +62,8 @@ func (st *trinoStatement) GetOption(ctx context.Context, key string) (string, er
 
 func (st *trinoStatement) SetOption(ctx context.Context, key, val string) error {
 	switch {
-	case strings.HasPrefix(key, optionStatementHTTPHeaderPrefix):
-		name, err := parseHeaderOption(key, optionStatementHTTPHeaderPrefix, val)
+	case strings.HasPrefix(key, optionHTTPHeaderPrefix):
+		name, err := parseHeaderOption(key, optionHTTPHeaderPrefix, val)
 		if err != nil {
 			return st.Base().ErrorHelper.InvalidArgument("invalid option %s: %s", key, err)
 		}

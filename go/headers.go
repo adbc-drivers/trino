@@ -26,8 +26,9 @@ import (
 )
 
 const (
-	optionHTTPHeaderPrefix          = "trino.http_header."
-	optionStatementHTTPHeaderPrefix = "trino.statement.http_header."
+	// optionHTTPHeaderPrefix is the prefix of the HTTP header options, which
+	// can be set on the database and on statements.
+	optionHTTPHeaderPrefix = "trino.http_header."
 )
 
 // reservedHeaders are managed by trino-go-client (which tracks the state of

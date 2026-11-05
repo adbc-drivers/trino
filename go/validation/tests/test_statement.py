@@ -207,7 +207,7 @@ def test_statement_client_tags_header(driver_path: str, db_kwargs: dict) -> None
 
         # The header replaces the connection client tags
         cursor.adbc_statement.set_options(
-            **{"trino.statement.http_header.X-Trino-Client-Tags": "raw"}
+            **{"trino.http_header.X-Trino-Client-Tags": "raw"}
         )
         cursor.execute("SELECT 1")
         cursor.fetchall()
@@ -218,14 +218,14 @@ def test_statement_client_tags_header(driver_path: str, db_kwargs: dict) -> None
 def test_statement_http_header(driver, conn) -> None:
     with conn.cursor() as cursor:
         cursor.adbc_statement.set_options(
-            **{"trino.statement.http_header.X-Trino-Source": "adbc-validation"}
+            **{"trino.http_header.X-Trino-Source": "adbc-validation"}
         )
         cursor.execute("SELECT 1")
         cursor.fetchall()
         query_id = cursor.adbc_statement.get_option("trino.statement.last_query_id")
 
         cursor.adbc_statement.set_options(
-            **{"trino.statement.http_header.X-Trino-Source": ""}
+            **{"trino.http_header.X-Trino-Source": ""}
         )
         cursor.execute(
             f"SELECT source FROM system.runtime.queries WHERE query_id = '{query_id}'"
@@ -241,5 +241,5 @@ def test_statement_reserved_http_header(driver, conn) -> None:
         ),
     ):
         cursor.adbc_statement.set_options(
-            **{"trino.statement.http_header.X-Trino-Catalog": "other"}
+            **{"trino.http_header.X-Trino-Catalog": "other"}
         )

@@ -1083,7 +1083,7 @@ func TestHTTPHeaders(t *testing.T) {
 	assert.Equal(t, []string{"my-source"}, srv.header(t, "SELECT 1", "X-Trino-Source"))
 	assert.Equal(t, []string{"alice"}, srv.header(t, "SELECT 1", "X-Trino-User"))
 
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", "statement"))
+	require.NoError(t, stmt.SetOption(ctx, "trino.http_header.X-Gateway", "statement"))
 	execute("SELECT 2")
 	assert.Equal(t, []string{"conn,shared"}, srv.header(t, "SELECT 2", "X-Trino-Client-Tags"))
 	assert.Equal(t, []string{"statement"}, srv.header(t, "SELECT 2", "X-Gateway"))
@@ -1106,13 +1106,13 @@ func TestHTTPHeaders(t *testing.T) {
 	assert.Equal(t, []string{"my-source"}, srv.header(t, "GET SELECT 3", "X-Trino-Source"))
 
 	// The header replaces the connection client tags.
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Trino-Client-Tags", "raw"))
+	require.NoError(t, stmt.SetOption(ctx, "trino.http_header.X-Trino-Client-Tags", "raw"))
 	execute("SELECT 4")
 	assert.Equal(t, []string{"raw"}, srv.header(t, "SELECT 4", "X-Trino-Client-Tags"))
 
 	// An empty value clears the option.
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Trino-Client-Tags", ""))
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", ""))
+	require.NoError(t, stmt.SetOption(ctx, "trino.http_header.X-Trino-Client-Tags", ""))
+	require.NoError(t, stmt.SetOption(ctx, "trino.http_header.X-Gateway", ""))
 	execute("SELECT 5")
 	assert.Equal(t, []string{"conn,shared"}, srv.header(t, "SELECT 5", "X-Trino-Client-Tags"))
 	assert.Equal(t, []string{"database"}, srv.header(t, "SELECT 5", "X-Gateway"))
@@ -1128,7 +1128,7 @@ func TestHTTPHeadersIngest(t *testing.T) {
 	}, nil)
 	batch := testutil.RecordFromJSON(t, memory.DefaultAllocator, schema, `[{"ints": 1}, {"ints": 2}]`)
 	defer batch.Release()
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", "ingest"))
+	require.NoError(t, stmt.SetOption(ctx, "trino.http_header.X-Gateway", "ingest"))
 	require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, "foo"))
 	require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestMode, adbc.OptionValueIngestModeReplace))
 	require.NoError(t, stmt.Bind(ctx, batch))
@@ -1151,7 +1151,7 @@ func TestHTTPHeadersExecuteSchema(t *testing.T) {
 	srv := newFakeTrinoServer(t)
 	stmt := openFakeTrino(t, srv, nil)
 
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", "statement"))
+	require.NoError(t, stmt.SetOption(ctx, "trino.http_header.X-Gateway", "statement"))
 	require.NoError(t, stmt.SetSqlQuery(ctx, "SELECT 1"))
 	schema, err := stmt.(adbc.StatementExecuteSchema).ExecuteSchema(ctx)
 	require.NoError(t, err)
@@ -1169,18 +1169,18 @@ func TestHTTPHeaderOptions(t *testing.T) {
 	stmt := openFakeTrino(t, srv, nil)
 	getter := stmt.(adbc.GetSetOptionsWithContext)
 
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.x-gateway", "value"))
-	val, err := getter.GetOption(ctx, "trino.statement.http_header.X-Gateway")
+	require.NoError(t, stmt.SetOption(ctx, "trino.http_header.x-gateway", "value"))
+	val, err := getter.GetOption(ctx, "trino.http_header.X-Gateway")
 	require.NoError(t, err)
 	assert.Equal(t, "value", val)
 
 	// Known options that are not set return an empty string.
-	val, err = getter.GetOption(ctx, "trino.statement.http_header.X-Unset")
+	val, err = getter.GetOption(ctx, "trino.http_header.X-Unset")
 	require.NoError(t, err)
 	assert.Equal(t, "", val)
 
-	require.NoError(t, stmt.SetOption(ctx, "trino.statement.http_header.X-Gateway", ""))
-	val, err = getter.GetOption(ctx, "trino.statement.http_header.X-Gateway")
+	require.NoError(t, stmt.SetOption(ctx, "trino.http_header.X-Gateway", ""))
+	val, err = getter.GetOption(ctx, "trino.http_header.X-Gateway")
 	require.NoError(t, err)
 	assert.Equal(t, "", val)
 
@@ -1193,14 +1193,14 @@ func TestHTTPHeaderOptions(t *testing.T) {
 	for _, tc := range []struct {
 		key, value string
 	}{
-		{"trino.statement.http_header.Accept-Encoding", "gzip"},
-		{"trino.statement.http_header.Connection", "close"},
-		{"trino.statement.http_header.X-Trino-User", "someone"},
-		{"trino.statement.http_header.x-trino-catalog", "other"},
-		{"trino.statement.http_header.Authorization", "Bearer token"},
-		{"trino.statement.http_header.Bad Header", "value"},
-		{"trino.statement.http_header.", "value"},
-		{"trino.statement.http_header.X-Gateway", "bad\nvalue"},
+		{"trino.http_header.Accept-Encoding", "gzip"},
+		{"trino.http_header.Connection", "close"},
+		{"trino.http_header.X-Trino-User", "someone"},
+		{"trino.http_header.x-trino-catalog", "other"},
+		{"trino.http_header.Authorization", "Bearer token"},
+		{"trino.http_header.Bad Header", "value"},
+		{"trino.http_header.", "value"},
+		{"trino.http_header.X-Gateway", "bad\nvalue"},
 	} {
 		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
 			err := stmt.SetOption(ctx, tc.key, tc.value)
