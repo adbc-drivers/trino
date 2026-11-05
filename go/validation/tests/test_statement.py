@@ -224,9 +224,7 @@ def test_statement_http_header(driver, conn) -> None:
         cursor.fetchall()
         query_id = cursor.adbc_statement.get_option("trino.statement.last_query_id")
 
-        cursor.adbc_statement.set_options(
-            **{"trino.http_header.X-Trino-Source": ""}
-        )
+        cursor.adbc_statement.set_options(**{"trino.http_header.X-Trino-Source": ""})
         cursor.execute(
             f"SELECT source FROM system.runtime.queries WHERE query_id = '{query_id}'"
         )

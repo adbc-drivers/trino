@@ -139,11 +139,11 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 	if len(rt.headers) > 0 {
 		// Hash the headers, as for the client certificate: their values may be
 		// secrets, and the client name ends up in the DSN.
-		h := sha256.New()
+		var headers strings.Builder
 		for _, name := range slices.Sorted(maps.Keys(rt.headers)) {
-			fmt.Fprintf(h, "%q:%q\n", name, rt.headers[name])
+			fmt.Fprintf(&headers, "%q:%q\n", name, rt.headers[name])
 		}
-		fmt.Fprintf(&httpClientName, "|headers=%x", h.Sum(nil))
+		fmt.Fprintf(&httpClientName, "|headers=%x", sha256.Sum256([]byte(headers.String())))
 	}
 	customClient := &http.Client{
 		Timeout:   timeout,
