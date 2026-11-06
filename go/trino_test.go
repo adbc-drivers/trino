@@ -687,6 +687,331 @@ func (s *TrinoTests) TestSelect() {
 	}
 }
 
+func (s *TrinoTests) TestSelectNested() {
+	tsUTC := &arrow.TimestampType{Unit: arrow.Millisecond, TimeZone: "UTC"}
+	tsNaive := &arrow.TimestampType{Unit: arrow.Millisecond}
+	field := func(name string, dt arrow.DataType) arrow.Field {
+		return arrow.Field{Name: name, Type: dt, Nullable: true}
+	}
+	mapOf := func(key, value arrow.DataType) arrow.DataType {
+		return arrow.MapOfFields(arrow.Field{Name: "key", Type: key}, field("value", value))
+	}
+
+	for _, testCase := range []struct {
+		name  string
+		query string
+		// dbType is the expected sql.database_type_name; empty skips the
+		// check, for type text that differs between Trino versions
+		dbType   string
+		dataType arrow.DataType
+		expected string
+	}{
+		{
+			name: "row",
+			query: `SELECT r FROM (VALUES
+				(1, CAST(ROW(1, 'a') AS ROW(x integer, y varchar))),
+				(2, NULL),
+				(3, CAST(ROW(NULL, NULL) AS ROW(x integer, y varchar)))
+			) AS t(idx, r) ORDER BY idx`,
+			dbType:   `ROW(X INTEGER, Y VARCHAR)`,
+			dataType: arrow.StructOf(field("x", arrow.PrimitiveTypes.Int32), field("y", arrow.BinaryTypes.String)),
+			expected: `[{"r": {"x": 1, "y": "a"}}, {"r": null}, {"r": {"x": null, "y": null}}]`,
+		},
+		{
+			name:     "anonymous row fields",
+			query:    `SELECT CAST(ROW(1, 'a') AS ROW(integer, varchar)) AS r`,
+			dbType:   `ROW(INTEGER, VARCHAR)`,
+			dataType: arrow.StructOf(field("field0", arrow.PrimitiveTypes.Int32), field("field1", arrow.BinaryTypes.String)),
+			expected: `[{"r": {"field0": 1, "field1": "a"}}]`,
+		},
+		{
+			// the client reports type signatures upper-cased, so the original
+			// case of quoted field names cannot be recovered
+			name:     "quoted mixed-case row field names are lower-cased",
+			query:    `SELECT CAST(ROW(1) AS ROW("MixedCase" integer)) AS r`,
+			dbType:   `ROW(MIXEDCASE INTEGER)`,
+			dataType: arrow.StructOf(field("mixedcase", arrow.PrimitiveTypes.Int32)),
+			expected: `[{"r": {"mixedcase": 1}}]`,
+		},
+		{
+			name:   "row field names that need quoting",
+			query:  `SELECT CAST(ROW(1, 2, 3) AS ROW("my field" integer, "a,b" integer, "timestamp" integer)) AS r`,
+			dbType: `ROW("MY FIELD" INTEGER, "A,B" INTEGER, TIMESTAMP INTEGER)`,
+			dataType: arrow.StructOf(
+				field("my field", arrow.PrimitiveTypes.Int32),
+				field("a,b", arrow.PrimitiveTypes.Int32),
+				field("timestamp", arrow.PrimitiveTypes.Int32),
+			),
+			expected: `[{"r": {"my field": 1, "a,b": 2, "timestamp": 3}}]`,
+		},
+		{
+			name: "map",
+			query: `SELECT m FROM (VALUES
+				(1, CAST(MAP(ARRAY['b', 'a'], ARRAY[2, 1]) AS MAP(varchar, bigint))),
+				(2, NULL),
+				(3, CAST(MAP() AS MAP(varchar, bigint)))
+			) AS t(idx, m) ORDER BY idx`,
+			dbType:   `MAP(VARCHAR, BIGINT)`,
+			dataType: mapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64),
+			expected: `[{"m": [{"key": "a", "value": 1}, {"key": "b", "value": 2}]}, {"m": null}, {"m": []}]`,
+		},
+		{
+			name:     "map with integer keys",
+			query:    `SELECT CAST(MAP(ARRAY[10, 2, -1], ARRAY['ten', 'two', NULL]) AS MAP(integer, varchar)) AS m`,
+			dbType:   `MAP(INTEGER, VARCHAR)`,
+			dataType: mapOf(arrow.PrimitiveTypes.Int32, arrow.BinaryTypes.String),
+			expected: `[{"m": [{"key": -1, "value": null}, {"key": 2, "value": "two"}, {"key": 10, "value": "ten"}]}]`,
+		},
+		{
+			// the JSON protocol sends map keys as strings; date keys stay strings
+			name:     "map with date keys",
+			query:    `SELECT CAST(MAP(ARRAY[DATE '2024-01-01'], ARRAY[1.5]) AS MAP(date, double)) AS m`,
+			dbType:   `MAP(DATE, DOUBLE)`,
+			dataType: mapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Float64),
+			expected: `[{"m": [{"key": "2024-01-01", "value": 1.5}]}]`,
+		},
+		{
+			name:   "array of rows",
+			query:  `SELECT CAST(ARRAY[ROW(1, ARRAY['x']), NULL] AS ARRAY(ROW(id bigint, tags array(varchar)))) AS a`,
+			dbType: `ARRAY(ROW(ID BIGINT, TAGS ARRAY(VARCHAR)))`,
+			dataType: arrow.ListOf(arrow.StructOf(
+				field("id", arrow.PrimitiveTypes.Int64),
+				field("tags", arrow.ListOf(arrow.BinaryTypes.String)),
+			)),
+			expected: `[{"a": [{"id": 1, "tags": ["x"]}, null]}]`,
+		},
+		{
+			name: "deeply nested",
+			query: `SELECT CAST(MAP(ARRAY['k'], ARRAY[ROW(1, MAP(ARRAY['z'], ARRAY[ROW(true)]))])
+				AS MAP(varchar, ROW(n integer, inner_map MAP(varchar, ROW(flag boolean))))) AS d`,
+			dbType: `MAP(VARCHAR, ROW(N INTEGER, INNER_MAP MAP(VARCHAR, ROW(FLAG BOOLEAN))))`,
+			dataType: mapOf(arrow.BinaryTypes.String, arrow.StructOf(
+				field("n", arrow.PrimitiveTypes.Int32),
+				field("inner_map", mapOf(arrow.BinaryTypes.String, arrow.StructOf(field("flag", arrow.FixedWidthTypes.Boolean)))),
+			)),
+			expected: `[{"d": [{"key": "k", "value": {"n": 1, "inner_map": [{"key": "z", "value": {"flag": true}}]}}]}]`,
+		},
+		{
+			// list elements keep their field metadata, which the interval inserter needs
+			name:     "array of intervals in a row",
+			query:    `SELECT CAST(ROW(ARRAY[INTERVAL '1' DAY, INTERVAL '2' HOUR]) AS ROW(ivs array(interval day to second))) AS r`,
+			dbType:   "", // parametric interval text depends on the Trino version
+			dataType: arrow.StructOf(field("ivs", arrow.ListOf(arrow.FixedWidthTypes.MonthDayNanoInterval))),
+			expected: `[{"r": {"ivs": [{"months": 0, "days": 1, "nanoseconds": 0}, {"months": 0, "days": 0, "nanoseconds": 7200000000000}]}}]`,
+		},
+		{
+			name: "negative year to month intervals in a row",
+			query: `SELECT CAST(ROW(INTERVAL '-1' YEAR, INTERVAL '-2-6' YEAR TO MONTH, INTERVAL '-3' MONTH, INTERVAL '2-6' YEAR TO MONTH)
+				AS ROW(a interval year to month, b interval year to month, c interval year to month, d interval year to month)) AS r`,
+			dbType: "", // parametric interval text depends on the Trino version
+			dataType: arrow.StructOf(
+				field("a", arrow.FixedWidthTypes.MonthDayNanoInterval),
+				field("b", arrow.FixedWidthTypes.MonthDayNanoInterval),
+				field("c", arrow.FixedWidthTypes.MonthDayNanoInterval),
+				field("d", arrow.FixedWidthTypes.MonthDayNanoInterval),
+			),
+			expected: `[{"r": {"a": {"months": -12, "days": 0, "nanoseconds": 0}, "b": {"months": -30, "days": 0, "nanoseconds": 0},
+				"c": {"months": -3, "days": 0, "nanoseconds": 0}, "d": {"months": 30, "days": 0, "nanoseconds": 0}}}]`,
+		},
+		{
+			name: "negative day to second intervals in a map",
+			query: `SELECT CAST(MAP(ARRAY['a', 'b', 'c'], ARRAY[INTERVAL '-2' HOUR, INTERVAL '-1 02:03:04.567' DAY TO SECOND, INTERVAL '-0.5' SECOND])
+				AS MAP(varchar, interval day to second)) AS m`,
+			dbType:   "", // parametric interval text depends on the Trino version
+			dataType: mapOf(arrow.BinaryTypes.String, arrow.FixedWidthTypes.MonthDayNanoInterval),
+			expected: `[{"m": [{"key": "a", "value": {"months": 0, "days": 0, "nanoseconds": -7200000000000}},
+				{"key": "b", "value": {"months": 0, "days": -1, "nanoseconds": -7384567000000}},
+				{"key": "c", "value": {"months": 0, "days": 0, "nanoseconds": -500000000}}]}]`,
+		},
+		{
+			name:     "negative day to second interval at top level",
+			query:    `SELECT INTERVAL '-1 02:03:04.567' DAY TO SECOND AS iv`,
+			dbType:   "", // parametric interval text depends on the Trino version
+			dataType: arrow.FixedWidthTypes.MonthDayNanoInterval,
+			expected: `[{"iv": {"months": 0, "days": -1, "nanoseconds": -7384567000000}}]`,
+		},
+		{
+			name:     "negative year to month interval at top level",
+			query:    `SELECT INTERVAL '-2-6' YEAR TO MONTH AS iv`,
+			dbType:   "", // parametric interval text depends on the Trino version
+			dataType: arrow.FixedWidthTypes.MonthDayNanoInterval,
+			expected: `[{"iv": {"months": -30, "days": 0, "nanoseconds": 0}}]`,
+		},
+		{
+			// the protocol sends double keys like "1.0E10" and "NaN"; NaN sorts last
+			name: "map with double keys",
+			query: `SELECT CAST(MAP(ARRAY[nan(), -infinity(), 1e10, 1e-5, -1.5], ARRAY[1, 2, 3, 4, 5])
+				AS MAP(double, integer)) AS m`,
+			dbType:   `MAP(DOUBLE, INTEGER)`,
+			dataType: mapOf(arrow.PrimitiveTypes.Float64, arrow.PrimitiveTypes.Int32),
+			expected: `[{"m": [{"key": "-Inf", "value": 2}, {"key": -1.5, "value": 5}, {"key": 1e-5, "value": 4},
+				{"key": 1e10, "value": 3}, {"key": "NaN", "value": 1}]}]`,
+		},
+		{
+			name:     "map with boolean and decimal keys",
+			query:    `SELECT CAST(MAP(ARRAY[DECIMAL '10.50', DECIMAL '2.00', DECIMAL '-1.25'], ARRAY[true, false, true]) AS MAP(decimal(4, 2), boolean)) AS m`,
+			dbType:   `MAP(DECIMAL(4, 2), BOOLEAN)`,
+			dataType: mapOf(&arrow.Decimal32Type{Precision: 4, Scale: 2}, arrow.FixedWidthTypes.Boolean),
+			expected: `[{"m": [{"key": "-1.25", "value": true}, {"key": "2.00", "value": false}, {"key": "10.50", "value": true}]}]`,
+		},
+		{
+			// top-level arrays of the element types scanTypeToListMap covers
+			// keep their existing mapping for backward compatibility
+			name:     "top-level integer array keeps its existing mapping",
+			query:    `SELECT ARRAY[1, 2] AS a`,
+			dbType:   `ARRAY(INTEGER)`,
+			dataType: arrow.ListOf(arrow.PrimitiveTypes.Int64),
+			expected: `[{"a": [1, 2]}]`,
+		},
+		{
+			name:     "top-level decimal array keeps its existing mapping",
+			query:    `SELECT CAST(ARRAY[1.5] AS ARRAY(decimal(3, 1))) AS a`,
+			dbType:   `ARRAY(DECIMAL(3, 1))`,
+			dataType: arrow.ListOf(arrow.BinaryTypes.String),
+			expected: `[{"a": ["1.5"]}]`,
+		},
+		{
+			// unlike a top-level array, an array in a row maps its elements
+			// like top-level columns
+			name:     "integer array in a row",
+			query:    `SELECT CAST(ROW(ARRAY[1, 2]) AS ROW(a array(integer))) AS r`,
+			dbType:   `ROW(A ARRAY(INTEGER))`,
+			dataType: arrow.StructOf(field("a", arrow.ListOf(arrow.PrimitiveTypes.Int32))),
+			expected: `[{"r": {"a": [1, 2]}}]`,
+		},
+		{
+			name: "row fields use the same types as top-level columns",
+			query: `SELECT CAST(ROW(DECIMAL '12.34', TIMESTAMP '2024-01-02 03:04:05.678', TIMESTAMP '2024-01-02 03:04:05.678 UTC',
+					DATE '2024-01-02', X'0102', INTERVAL '2' DAY, REAL '1.5', true)
+				AS ROW(d decimal(4,2), ts timestamp(3), tstz timestamp(3) with time zone,
+					dt date, b varbinary, iv interval day to second, f real, ok boolean)) AS r`,
+			dbType: "", // parametric interval text depends on the Trino version
+			dataType: arrow.StructOf(
+				field("d", &arrow.Decimal32Type{Precision: 4, Scale: 2}),
+				field("ts", tsNaive),
+				field("tstz", tsUTC),
+				field("dt", arrow.FixedWidthTypes.Date32),
+				field("b", arrow.BinaryTypes.Binary),
+				field("iv", arrow.FixedWidthTypes.MonthDayNanoInterval),
+				field("f", arrow.PrimitiveTypes.Float32),
+				field("ok", arrow.FixedWidthTypes.Boolean),
+			),
+			expected: `[{"r": {"d": "12.34", "ts": "2024-01-02T03:04:05.678", "tstz": "2024-01-02T03:04:05.678Z",
+				"dt": "2024-01-02", "b": "AQI=", "iv": {"months": 0, "days": 2, "nanoseconds": 0}, "f": 1.5, "ok": true}}]`,
+		},
+	} {
+		s.Run(testCase.name, func() {
+			s.Require().NoError(s.stmt.SetSqlQuery(s.ctx, testCase.query))
+
+			rdr, _, err := s.stmt.ExecuteQuery(s.ctx)
+			s.Require().NoError(err)
+			defer rdr.Release()
+
+			schema := rdr.Schema()
+			s.Require().Equal(1, schema.NumFields())
+			got := schema.Field(0)
+			s.Truef(arrow.TypeEqual(testCase.dataType, got.Type), "expected: %s\ngot: %s", testCase.dataType, got.Type)
+			s.True(got.Nullable)
+			if testCase.dbType != "" {
+				dbType, _ := got.Metadata.GetValue("sql.database_type_name")
+				s.Equal(testCase.dbType, dbType)
+			}
+
+			s.Require().Truef(rdr.Next(), "no record, error? %s", rdr.Err())
+			rec := rdr.RecordBatch()
+
+			expectedRecord, _, err := array.RecordFromJSON(s.Quirks.Alloc(), schema, bytes.NewReader([]byte(testCase.expected)))
+			s.Require().NoError(err)
+			defer expectedRecord.Release()
+
+			// exact comparison, except that NaN map keys compare equal
+			s.Truef(array.RecordApproxEqual(expectedRecord, rec, array.WithNaNsEqual(true), array.WithAbsTolerance(0)),
+				"expected: %s\ngot: %s", expectedRecord, rec)
+			s.False(rdr.Next())
+			s.NoError(rdr.Err())
+		})
+	}
+}
+
+func (s *TrinoTests) TestSelectDeeplyNested() {
+	// 50 levels cycling through ARRAY, ROW and MAP around a BIGINT
+	const depth = 50
+	value := "BIGINT '42'"
+	for i := range depth {
+		switch i % 3 {
+		case 0:
+			value = "ARRAY[" + value + "]"
+		case 1:
+			value = "ROW(" + value + ")"
+		case 2:
+			value = "MAP(ARRAY['k'], ARRAY[" + value + "])"
+		}
+	}
+	s.Require().NoError(s.stmt.SetSqlQuery(s.ctx, "SELECT "+value+" AS v"))
+	rdr, _, err := s.stmt.ExecuteQuery(s.ctx)
+	s.Require().NoError(err)
+	defer rdr.Release()
+	s.Require().Truef(rdr.Next(), "no record, error? %s", rdr.Err())
+
+	levels := 0
+	arr := rdr.RecordBatch().Column(0)
+	for {
+		s.Require().Equal(1, arr.Len(), "level %d", levels)
+		next := arr
+		switch a := arr.(type) {
+		case *array.Map: // before *array.List, which it embeds
+			next = a.Items()
+		case *array.List:
+			next = a.ListValues()
+		case *array.Struct:
+			next = a.Field(0)
+		}
+		if next == arr {
+			break
+		}
+		arr = next
+		levels++
+	}
+	s.Equal(depth, levels)
+	s.Require().IsType(&array.Int64{}, arr)
+	s.Equal(int64(42), arr.(*array.Int64).Value(0))
+	s.False(rdr.Next())
+	s.NoError(rdr.Err())
+}
+
+func (s *TrinoTests) TestSelectTimestampOutOfRange() {
+	// nanosecond timestamps only cover the years 1677 to 2262: other values
+	// fail the query with an error instead of panicking
+	for _, query := range []string{
+		`SELECT TIMESTAMP '9999-12-31 23:59:59.999999999' AS v`,
+		`SELECT TIMESTAMP '9999-12-31 23:59:59.999999999 UTC' AS v`,
+		`SELECT ROW(TIMESTAMP '9999-12-31 23:59:59.999999999') AS v`,
+		`SELECT ROW(TIMESTAMP '1500-01-01 00:00:00.000000000 UTC') AS v`,
+		`SELECT MAP(ARRAY[1], ARRAY[TIMESTAMP '2300-01-01 00:00:00.0000000']) AS v`,
+	} {
+		s.Run(query, func() {
+			s.Require().NoError(s.stmt.SetSqlQuery(s.ctx, query))
+			rdr, _, err := s.stmt.ExecuteQuery(s.ctx)
+			if err == nil {
+				defer rdr.Release()
+				s.False(rdr.Next())
+				err = rdr.Err()
+			}
+			s.Require().Error(err)
+			s.Contains(err.Error(), "cannot be represented in ns precision")
+		})
+	}
+
+	// microsecond precision covers them
+	s.Require().NoError(s.stmt.SetSqlQuery(s.ctx, `SELECT ROW(TIMESTAMP '9999-12-31 23:59:59.999999') AS v`))
+	rdr, _, err := s.stmt.ExecuteQuery(s.ctx)
+	s.Require().NoError(err)
+	defer rdr.Release()
+	s.Require().Truef(rdr.Next(), "no record, error? %s", rdr.Err())
+	ts := rdr.RecordBatch().Column(0).(*array.Struct).Field(0).(*array.Timestamp)
+	s.Equal(arrow.Timestamp(253402300799999999), ts.Value(0))
+}
+
 type TrinoTestSuite struct {
 	suite.Suite
 	dsn    string

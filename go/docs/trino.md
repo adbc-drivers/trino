@@ -118,6 +118,38 @@ Year/month and day/time intervals, including parameterized interval types, are
 returned as Arrow month-day-nanosecond intervals. Fractional seconds beyond nine
 digits are truncated to nanoseconds.
 
+Timestamps with more than six fractional digits are returned with nanosecond
+precision (except in top-level arrays, which use microseconds), which only
+covers the years 1677 to 2262. A query returning such a timestamp outside that
+range fails with an error; cast it to `TIMESTAMP(6)` or
+`TIMESTAMP(6) WITH TIME ZONE` (microseconds) to read it.
+
+`ROW` values are returned as Arrow structs and `MAP` values as Arrow maps, at any
+nesting depth (for example `ARRAY(ROW(...))` or `MAP(VARCHAR, ROW(...))`). Values
+inside them get the same Arrow types as top-level columns of the same Trino type.
+Note that:
+
+- ROW field names are lower-cased, as the Trino Go client reports type
+  signatures upper-cased. Quoted field names with upper-case letters, like
+  `"MixedCase"`, therefore lose their case, and some non-ASCII letters (like
+  `ß`) may not round-trip. Anonymous fields are named `field0`,
+  `field1`, and so on. Field names are not made unique, so a struct can have
+  two fields with the same name.
+- Trino sends map keys as strings. Keys of integer, floating point, boolean,
+  decimal, UUID and string types are converted back to their type; keys of other
+  types, such as dates and timestamps, are returned as strings. Map entries are
+  sorted by key.
+- Top-level `ARRAY` columns of simple element types, nested up to three levels
+  deep, keep their existing mapping (for example `ARRAY(INTEGER)` as
+  `list<int64>`, `ARRAY(DECIMAL)` as `list<string>`). The same array inside a
+  `ROW` or `MAP`, or nested more than three levels deep, maps its elements like
+  top-level columns instead (for example `list<int32>`, `list<decimal>`).
+- Types without an Arrow equivalent, such as `HyperLogLog`, `QDIGEST` or
+  `BingTile`, are returned as opaque strings, inside a `ROW` or `MAP` as at the
+  top level.
+- Structs and maps are only supported when reading. Bulk ingestion and bound
+  parameters do not create `ROW` or `MAP` values.
+
 ## Options
 
 `trino.session_user`, `trino.impersonation_user`

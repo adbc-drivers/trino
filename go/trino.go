@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"regexp"
@@ -171,6 +172,17 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 		return listType, colType.Nullable, metadata, nil
 	}
 
+	// ARRAY, MAP and ROW types the scan type does not cover, e.g. MAP(VARCHAR,
+	// BIGINT), ROW(...) or ARRAY(ROW(...)), are converted from their type
+	// signature. If it cannot be parsed, fall back to the default conversion.
+	if isNestedTypeName(colType.DatabaseTypeName) {
+		if parsed, err := parseTrinoType(colType.DatabaseTypeName); err == nil {
+			if field, err := m.nestedArrowField(colType.Name, parsed); err == nil {
+				return field.Type, colType.Nullable, field.Metadata, nil
+			}
+		}
+	}
+
 	// For all other types, fall back to default conversion
 	return m.DefaultTypeConverter.ConvertRawColumnType(colType)
 }
@@ -228,8 +240,10 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 				unit:    fieldType.Unit,
 			}, nil
 		}
-		// For timezone-aware timestamps, fall back to default
-		return m.DefaultTypeConverter.CreateInserter(field, builder)
+		return &trinoZonedTimestampInserter{
+			builder: builder.(*array.TimestampBuilder),
+			unit:    fieldType.Unit,
+		}, nil
 	case *arrow.BinaryType, *arrow.LargeBinaryType, *arrow.BinaryViewType, *arrow.FixedSizeBinaryType:
 		// Use custom binary inserter that handles base64 decoding from ConvertArrowToGo
 		return &trinoBinaryInserter{builder: builder.(array.BinaryLikeBuilder)}, nil
@@ -255,12 +269,44 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 		}
 	case *arrow.ListType:
 		lb := builder.(*array.ListBuilder)
-		elemField := arrow.Field{Name: "item", Type: fieldType.Elem(), Nullable: true}
+		// The element field keeps its metadata, which inserters for nested
+		// types like intervals read the database type name from.
+		elemField := fieldType.ElemField()
 		childIns, err := m.CreateInserter(&elemField, lb.ValueBuilder())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create child inserter for list: %w", err)
 		}
 		return &listInserter{builder: lb, childInserter: childIns}, nil
+	case *arrow.StructType:
+		sb := builder.(*array.StructBuilder)
+		children := make([]sqlwrapper.Inserter, fieldType.NumFields())
+		for i := range children {
+			childField := fieldType.Field(i)
+			childIns, err := m.CreateInserter(&childField, sb.FieldBuilder(i))
+			if err != nil {
+				return nil, fmt.Errorf("failed to create inserter for struct field %q: %w", childField.Name, err)
+			}
+			children[i] = childIns
+		}
+		return &structInserter{builder: sb, children: children}, nil
+	case *arrow.MapType:
+		mb := builder.(*array.MapBuilder)
+		keyField, itemField := fieldType.KeyField(), fieldType.ItemField()
+		keyIns, err := m.CreateInserter(&keyField, mb.KeyBuilder())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create inserter for map keys: %w", err)
+		}
+		valueIns, err := m.CreateInserter(&itemField, mb.ItemBuilder())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create inserter for map values: %w", err)
+		}
+		return &mapInserter{
+			builder:    mb,
+			keyType:    keyField.Type,
+			decimalKey: isDecimalType(keyField.Type),
+			keyIns:     keyIns,
+			valueIns:   valueIns,
+		}, nil
 	default:
 		// For all other types, use default inserter
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
@@ -327,7 +373,58 @@ func (ins *trinoTimestampInserter) AppendValue(sqlValue any) error {
 		time.UTC, // Force UTC to prevent timezone conversion
 	)
 
-	ins.builder.AppendTime(naiveTime)
+	return appendTimestamp(ins.builder, naiveTime, ins.unit)
+}
+
+// trinoZonedTimestampInserter handles TIMESTAMP WITH TIME ZONE. It accepts
+// the same values as the sqlwrapper default, but reports values out of range
+// for the unit as errors instead of panicking.
+type trinoZonedTimestampInserter struct {
+	builder *array.TimestampBuilder
+	unit    arrow.TimeUnit
+}
+
+func (ins *trinoZonedTimestampInserter) AppendValue(sqlValue any) error {
+	unwrapped, err := unwrap(sqlValue)
+	if err != nil {
+		return err
+	}
+	var t time.Time
+	switch v := unwrapped.(type) {
+	case nil:
+		ins.builder.AppendNull()
+		return nil
+	case time.Time:
+		t = v
+	case string, []byte:
+		var text string
+		if s, ok := v.(string); ok {
+			text = s
+		} else {
+			text = string(v.([]byte))
+		}
+		ts, err := arrow.TimestampFromString(text, arrow.Microsecond)
+		if err != nil {
+			return err
+		}
+		t = ts.ToTime(arrow.Microsecond)
+	default:
+		return fmt.Errorf("cannot convert %T to timestamp, expected time.Time", sqlValue)
+	}
+	return appendTimestamp(ins.builder, t, ins.unit)
+}
+
+// appendTimestamp appends a time to a timestamp builder. Unlike
+// TimestampBuilder.AppendTime, which panics, it returns an error for times
+// the unit cannot represent, like 9999-12-31 at nanosecond precision (which
+// only covers the years 1677 to 2262).
+func appendTimestamp(builder *array.TimestampBuilder, t time.Time, unit arrow.TimeUnit) error {
+	ts, err := arrow.TimestampFromTime(t, unit)
+	if err != nil {
+		return fmt.Errorf("timestamp %s cannot be represented in %s precision; cast it to a lower precision, e.g. TIMESTAMP(6) or TIMESTAMP(6) WITH TIME ZONE: %w",
+			t.Format(time.RFC3339Nano), unit, err)
+	}
+	builder.Append(ts)
 	return nil
 }
 
@@ -415,8 +512,10 @@ func (ins *yearToMonthIntervalInserter) AppendValue(sqlValue any) error {
 	return nil
 }
 
-// parseYearToMonth parses "2-6" format (2 years 6 months) to MonthDayNanoInterval
+// parseYearToMonth parses "2-6" format (2 years 6 months) to MonthDayNanoInterval.
+// Trino writes negative intervals with one leading sign, e.g. "-2-6".
 func parseYearToMonth(intervalStr string) (arrow.MonthDayNanoInterval, error) {
+	negative, intervalStr := cutSign(intervalStr)
 	parts := strings.Split(intervalStr, "-")
 	if len(parts) != 2 {
 		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid YEAR TO MONTH format, expected 'Y-M'")
@@ -432,9 +531,15 @@ func parseYearToMonth(intervalStr string) (arrow.MonthDayNanoInterval, error) {
 		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid months: %w", err)
 	}
 
-	totalMonths := int32(years*12 + months)
+	totalMonths := int64(years)*12 + int64(months)
+	if negative {
+		totalMonths = -totalMonths
+	}
+	if totalMonths < math.MinInt32 || totalMonths > math.MaxInt32 {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("interval of %d months is out of range", totalMonths)
+	}
 	return arrow.MonthDayNanoInterval{
-		Months:      totalMonths,
+		Months:      int32(totalMonths),
 		Days:        0,
 		Nanoseconds: 0,
 	}, nil
@@ -470,8 +575,14 @@ func (ins *dayToSecondIntervalInserter) AppendValue(sqlValue any) error {
 	return nil
 }
 
-// parseDayToSecond parses "1 23:59:59.999" format to MonthDayNanoInterval
+// parseDayToSecond parses "1 23:59:59.999" format to MonthDayNanoInterval.
+// Trino writes negative intervals with one leading sign that applies to the
+// whole value, e.g. "-1 02:00:00" is minus 1 day and 2 hours.
 func parseDayToSecond(intervalStr string) (arrow.MonthDayNanoInterval, error) {
+	negative, intervalStr := cutSign(intervalStr)
+	if strings.Contains(intervalStr, "-") {
+		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid DAY TO SECOND format, expected a single leading sign")
+	}
 	// Split "D HH:MM:SS.sss" format
 	parts := strings.Fields(intervalStr)
 	if len(parts) != 2 {
@@ -527,12 +638,25 @@ func parseDayToSecond(intervalStr string) (arrow.MonthDayNanoInterval, error) {
 
 	// Convert time to total nanoseconds
 	timeNanos := int64(hours*3600+minutes*60+seconds)*1_000_000_000 + nanos
+	if negative {
+		days, timeNanos = -days, -timeNanos
+	}
 
 	return arrow.MonthDayNanoInterval{
 		Months:      0,
 		Days:        int32(days),
 		Nanoseconds: timeNanos,
 	}, nil
+}
+
+// cutSign removes the leading minus Trino writes before a negative interval
+// and reports whether there was one.
+func cutSign(intervalStr string) (negative bool, rest string) {
+	rest = strings.TrimSpace(intervalStr)
+	if after, ok := strings.CutPrefix(rest, "-"); ok {
+		return true, after
+	}
+	return false, rest
 }
 
 // ConvertArrowToGo implements Trino-specific Arrow value to Go value conversion
