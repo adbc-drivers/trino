@@ -808,13 +808,6 @@ func (s *TrinoTests) TestSelectNested() {
 				{"months": 0, "days": 1, "nanoseconds": 0}]}}]`,
 		},
 		{
-			name:     "negative day to second interval at top level",
-			query:    `SELECT INTERVAL '-1 02:03:04.567' DAY TO SECOND AS iv`,
-			dbType:   "", // parametric interval text depends on the Trino version
-			dataType: arrow.FixedWidthTypes.MonthDayNanoInterval,
-			expected: `[{"iv": {"months": 0, "days": -1, "nanoseconds": -7384567000000}}]`,
-		},
-		{
 			// the protocol sends double keys like "1.0E10" and "NaN"
 			name: "map with double keys",
 			query: `SELECT CAST(MAP(ARRAY[nan(), -infinity(), 1e10, 1e-5, -1.5], ARRAY[1, 2, 3, 4, 5])

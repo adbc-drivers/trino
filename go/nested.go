@@ -45,11 +45,6 @@ type trinoField struct {
 	typ  *trinoType
 }
 
-func isNestedTypeName(typeName string) bool {
-	upper := strings.ToUpper(strings.TrimSpace(typeName))
-	return strings.HasPrefix(upper, "ARRAY(") || strings.HasPrefix(upper, "MAP(") || strings.HasPrefix(upper, "ROW(")
-}
-
 func parseTrinoType(text string) (*trinoType, error) {
 	text = strings.TrimSpace(text)
 	open := strings.IndexByte(text, '(')
@@ -189,22 +184,9 @@ func normalizeSpaces(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// rowFieldName returns the Arrow name of a ROW field. The client reports type
-// text upper-cased, so names are lower-cased: right for unquoted identifiers
-// and Hive/Iceberg names, but quoted names like "MixedCase" lose their case.
-// Anonymous fields are named field0, field1, ... like the client names them.
-func rowFieldName(f trinoField, index int) string {
-	if f.name == "" {
-		return "field" + strconv.Itoa(index)
-	}
-	return strings.ToLower(f.name)
-}
-
 // nestedArrowField converts a parsed type into an Arrow field. Scalars go
 // through ConvertRawColumnType, so they get the same Arrow type as top-level
-// columns. (Top-level arrays that scanTypeToListMap covers keep their
-// existing mapping for backward compatibility, so they can differ from the
-// same array nested in a ROW or MAP.)
+// columns.
 func (m *trinoTypeConverter) nestedArrowField(name string, t *trinoType) (arrow.Field, error) {
 	field := arrow.Field{Name: name, Nullable: true, Metadata: arrow.MetadataFrom(map[string]string{
 		sqlwrapper.MetaKeyDatabaseTypeName: t.text,
@@ -217,7 +199,14 @@ func (m *trinoTypeConverter) nestedArrowField(name string, t *trinoType) (arrow.
 		case "MAP":
 			childName = []string{"key", "value"}[i]
 		case "ROW":
-			childName = rowFieldName(child, i)
+			// The client reports type text upper-cased, so names are
+			// lower-cased: right for unquoted identifiers and Hive/Iceberg
+			// names, but quoted names like "MixedCase" lose their case.
+			// Anonymous fields are named like the client names them.
+			childName = strings.ToLower(child.name)
+			if child.name == "" {
+				childName = "field" + strconv.Itoa(i)
+			}
 		}
 		var err error
 		if children[i], err = m.nestedArrowField(childName, child.typ); err != nil {
@@ -291,20 +280,6 @@ func isSupportedMapKeyType(dt arrow.DataType) bool {
 	return false
 }
 
-// convertMapKey turns a map key string into the value the client returns for
-// a top-level column of the key's type.
-func convertMapKey(dt arrow.DataType, key string) (any, error) {
-	switch dt.(type) {
-	case *arrow.Int8Type, *arrow.Int16Type, *arrow.Int32Type, *arrow.Int64Type:
-		return strconv.ParseInt(key, 10, 64)
-	case *arrow.Float32Type, *arrow.Float64Type:
-		return strconv.ParseFloat(key, 64)
-	case *arrow.BooleanType:
-		return strconv.ParseBool(key)
-	}
-	return key, nil // strings, decimals and UUIDs
-}
-
 // rowValue is the part of trino.Row the struct inserter uses, so tests can
 // provide ROW values (trino.Row has no exported constructor).
 type rowValue interface {
@@ -345,7 +320,6 @@ func (ins *structInserter) AppendValue(sqlValue any) error {
 // are sorted by key text to make the output deterministic.
 type mapInserter struct {
 	builder  *array.MapBuilder
-	keyType  arrow.DataType
 	keyIns   sqlwrapper.Inserter
 	valueIns sqlwrapper.Inserter
 }
@@ -359,17 +333,10 @@ func (ins *mapInserter) AppendValue(sqlValue any) error {
 	if !ok {
 		return fmt.Errorf("expected map[string]any for MAP type, got %T", sqlValue)
 	}
-	keys := slices.Sorted(maps.Keys(m))
-	converted := make([]any, len(keys))
-	for i, k := range keys {
-		var err error
-		if converted[i], err = convertMapKey(ins.keyType, k); err != nil {
-			return fmt.Errorf("MAP key %q: %w", k, err)
-		}
-	}
 	ins.builder.Append(true)
-	for i, k := range keys {
-		if err := ins.keyIns.AppendValue(converted[i]); err != nil {
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		// the default numeric and boolean inserters parse the key text
+		if err := ins.keyIns.AppendValue(k); err != nil {
 			return fmt.Errorf("MAP key %q: %w", k, err)
 		}
 		if err := ins.valueIns.AppendValue(m[k]); err != nil {

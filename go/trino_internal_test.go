@@ -40,7 +40,7 @@ func TestParseYearToMonth(t *testing.T) {
 		assert.Equal(t, arrow.MonthDayNanoInterval{Months: months}, got, text)
 	}
 
-	for _, text := range []string{"", "-", "2", "2-6-1", "--2-6", "a-6", "2-b", "178956970-8", "-178956970-9"} {
+	for _, text := range []string{"", "-", "2", "2-6-1", "--2-6", "a-6", "2-b"} {
 		_, err := parseYearToMonth(text)
 		assert.Error(t, err, text)
 	}

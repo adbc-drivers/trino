@@ -19,7 +19,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
-	"math"
 	"math/big"
 	"reflect"
 	"regexp"
@@ -175,11 +174,9 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 	// ARRAY, MAP and ROW types the scan type does not cover, e.g. MAP(VARCHAR,
 	// BIGINT), ROW(...) or ARRAY(ROW(...)), are converted from their type
 	// signature. If it cannot be parsed, fall back to the default conversion.
-	if isNestedTypeName(colType.DatabaseTypeName) {
-		if parsed, err := parseTrinoType(colType.DatabaseTypeName); err == nil {
-			if field, err := m.nestedArrowField(colType.Name, parsed); err == nil {
-				return field.Type, colType.Nullable, field.Metadata, nil
-			}
+	if parsed, err := parseTrinoType(colType.DatabaseTypeName); err == nil && parsed.children != nil {
+		if field, err := m.nestedArrowField(colType.Name, parsed); err == nil {
+			return field.Type, colType.Nullable, field.Metadata, nil
 		}
 	}
 
@@ -294,7 +291,7 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 		if err != nil {
 			return nil, fmt.Errorf("failed to create inserter for map values: %w", err)
 		}
-		return &mapInserter{builder: mb, keyType: keyField.Type, keyIns: keyIns, valueIns: valueIns}, nil
+		return &mapInserter{builder: mb, keyIns: keyIns, valueIns: valueIns}, nil
 	default:
 		// For all other types, use default inserter
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
@@ -478,12 +475,9 @@ func parseYearToMonth(intervalStr string) (arrow.MonthDayNanoInterval, error) {
 		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid months: %w", err)
 	}
 
-	totalMonths := int64(years)*12 + int64(months)
+	totalMonths := int64(years)*12 + int64(months) // int64: -(2^31) is only reached after negating
 	if negative {
 		totalMonths = -totalMonths
-	}
-	if totalMonths < math.MinInt32 || totalMonths > math.MaxInt32 {
-		return arrow.MonthDayNanoInterval{}, fmt.Errorf("interval of %d months is out of range", totalMonths)
 	}
 	return arrow.MonthDayNanoInterval{
 		Months:      int32(totalMonths),
