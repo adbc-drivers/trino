@@ -124,8 +124,8 @@ timestamps only cover the years 1677 to 2262; other values fail the query. Cast
 them to `TIMESTAMP(6)` (with or without time zone) to read them.
 
 `ROW` values are returned as Arrow structs and `MAP` values as Arrow maps, at any
-nesting depth. Values inside them get the same Arrow types as top-level columns,
-except that:
+nesting depth. Values inside them get the same Arrow types as top-level columns.
+Note that:
 
 - ROW field names are lower-cased, as the Trino Go client upper-cases type
   names: quoted names like `"MixedCase"` lose their case. Anonymous fields are
@@ -134,9 +134,10 @@ except that:
   and strings (such as dates) are returned as strings. Entries are sorted by key
   text.
 - Top-level `ARRAY` columns of simple types, up to three levels deep, keep their
-  existing mapping (e.g. `ARRAY(DATE)` as `list<timestamp[us, UTC]>`); the same
-  array in a `ROW` or `MAP`, or nested deeper, maps like top-level columns
-  (`list<date32>`).
+  existing mapping (e.g. `ARRAY(DATE)` as `list<timestamp[us, UTC]>`, and
+  `ARRAY(DECIMAL)`, `ARRAY(INTERVAL ...)` or `ARRAY(UUID)` as `list<string>`);
+  the same array in a `ROW` or `MAP`, or nested deeper, maps like top-level
+  columns (e.g. `list<date32>`).
 - Structs and maps are only supported when reading, not for bulk ingestion or
   bound parameters.
 

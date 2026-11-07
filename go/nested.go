@@ -252,8 +252,8 @@ func (m *trinoTypeConverter) nestedArrowField(name string, t *trinoType) (arrow.
 	case strings.HasPrefix(t.base, "TIME") && len(t.params) == 1:
 		colType.Precision = &t.params[0]
 	case strings.HasPrefix(t.base, "INTERVAL "):
-		// the interval inserters read the qualifier from the type name
-		colType.DatabaseTypeName = strings.ToUpper(t.text)
+		// keep the qualifier with its precision, like top-level columns
+		colType.DatabaseTypeName = t.text
 		if len(t.params) > 0 {
 			scale := int64(0) // fractional seconds, only after SECOND
 			if strings.HasSuffix(t.base, "SECOND") && len(t.params) == 2 {
