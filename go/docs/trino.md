@@ -136,8 +136,8 @@ Note that:
 - Top-level `ARRAY` columns of simple types, up to three levels deep, keep their
   existing mapping (e.g. `ARRAY(DATE)` as `list<timestamp[us, UTC]>`, and
   `ARRAY(DECIMAL)`, `ARRAY(INTERVAL ...)` or `ARRAY(UUID)` as `list<string>`);
-  the same array in a `ROW` or `MAP`, or nested deeper, maps like top-level
-  columns (e.g. `list<date32>`).
+  inside a `ROW` or `MAP`, or nested deeper, the same array's elements map like
+  top-level columns (e.g. `list<date32>`).
 - Structs and maps are only supported when reading, not for bulk ingestion or
   bound parameters.
 
