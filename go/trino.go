@@ -233,16 +233,10 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 	// Check for Trino-specific types first
 	switch fieldType := field.Type.(type) {
 	case *arrow.TimestampType:
-		// Handle Trino's timezone-naive TIMESTAMP specially
-		if fieldType.TimeZone == "" {
-			return &trinoTimestampInserter{
-				builder: builder.(*array.TimestampBuilder),
-				unit:    fieldType.Unit,
-			}, nil
-		}
-		return &trinoZonedTimestampInserter{
+		return &trinoTimestampInserter{
 			builder: builder.(*array.TimestampBuilder),
 			unit:    fieldType.Unit,
+			zoned:   fieldType.TimeZone != "",
 		}, nil
 	case *arrow.BinaryType, *arrow.LargeBinaryType, *arrow.BinaryViewType, *arrow.FixedSizeBinaryType:
 		// Use custom binary inserter that handles base64 decoding from ConvertArrowToGo
@@ -300,13 +294,7 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 		if err != nil {
 			return nil, fmt.Errorf("failed to create inserter for map values: %w", err)
 		}
-		return &mapInserter{
-			builder:    mb,
-			keyType:    keyField.Type,
-			decimalKey: isDecimalType(keyField.Type),
-			keyIns:     keyIns,
-			valueIns:   valueIns,
-		}, nil
+		return &mapInserter{builder: mb, keyType: keyField.Type, keyIns: keyIns, valueIns: valueIns}, nil
 	default:
 		// For all other types, use default inserter
 		return m.DefaultTypeConverter.CreateInserter(field, builder)
@@ -343,10 +331,12 @@ func unwrap(val any) (any, error) {
 	return val, nil
 }
 
-// trinoTimestampInserter handles Trino's timezone-naive TIMESTAMP specially
+// trinoTimestampInserter handles TIMESTAMP, keeping naive values as
+// wall-clock time, and TIMESTAMP WITH TIME ZONE (zoned)
 type trinoTimestampInserter struct {
 	builder *array.TimestampBuilder
 	unit    arrow.TimeUnit
+	zoned   bool
 }
 
 func (ins *trinoTimestampInserter) AppendValue(sqlValue any) error {
@@ -373,58 +363,17 @@ func (ins *trinoTimestampInserter) AppendValue(sqlValue any) error {
 		time.UTC, // Force UTC to prevent timezone conversion
 	)
 
-	return appendTimestamp(ins.builder, naiveTime, ins.unit)
-}
-
-// trinoZonedTimestampInserter handles TIMESTAMP WITH TIME ZONE. It accepts
-// the same values as the sqlwrapper default, but reports values out of range
-// for the unit as errors instead of panicking.
-type trinoZonedTimestampInserter struct {
-	builder *array.TimestampBuilder
-	unit    arrow.TimeUnit
-}
-
-func (ins *trinoZonedTimestampInserter) AppendValue(sqlValue any) error {
-	unwrapped, err := unwrap(sqlValue)
-	if err != nil {
-		return err
+	if ins.zoned {
+		naiveTime = t
 	}
-	var t time.Time
-	switch v := unwrapped.(type) {
-	case nil:
-		ins.builder.AppendNull()
-		return nil
-	case time.Time:
-		t = v
-	case string, []byte:
-		var text string
-		if s, ok := v.(string); ok {
-			text = s
-		} else {
-			text = string(v.([]byte))
-		}
-		ts, err := arrow.TimestampFromString(text, arrow.Microsecond)
-		if err != nil {
-			return err
-		}
-		t = ts.ToTime(arrow.Microsecond)
-	default:
-		return fmt.Errorf("cannot convert %T to timestamp, expected time.Time", sqlValue)
-	}
-	return appendTimestamp(ins.builder, t, ins.unit)
-}
-
-// appendTimestamp appends a time to a timestamp builder. Unlike
-// TimestampBuilder.AppendTime, which panics, it returns an error for times
-// the unit cannot represent, like 9999-12-31 at nanosecond precision (which
-// only covers the years 1677 to 2262).
-func appendTimestamp(builder *array.TimestampBuilder, t time.Time, unit arrow.TimeUnit) error {
-	ts, err := arrow.TimestampFromTime(t, unit)
+	// TimestampBuilder.AppendTime would panic for times the unit cannot
+	// represent, like 9999-12-31 in nanoseconds (which cover 1677 to 2262).
+	ts, err := arrow.TimestampFromTime(naiveTime, ins.unit)
 	if err != nil {
 		return fmt.Errorf("timestamp %s cannot be represented in %s precision; cast it to a lower precision, e.g. TIMESTAMP(6) or TIMESTAMP(6) WITH TIME ZONE: %w",
-			t.Format(time.RFC3339Nano), unit, err)
+			naiveTime.Format(time.RFC3339Nano), ins.unit, err)
 	}
-	builder.Append(ts)
+	ins.builder.Append(ts)
 	return nil
 }
 

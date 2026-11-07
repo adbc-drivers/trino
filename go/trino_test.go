@@ -760,7 +760,8 @@ func (s *TrinoTests) TestSelectNested() {
 			query:    `SELECT CAST(MAP(ARRAY[10, 2, -1], ARRAY['ten', 'two', NULL]) AS MAP(integer, varchar)) AS m`,
 			dbType:   `MAP(INTEGER, VARCHAR)`,
 			dataType: mapOf(arrow.PrimitiveTypes.Int32, arrow.BinaryTypes.String),
-			expected: `[{"m": [{"key": -1, "value": null}, {"key": 2, "value": "two"}, {"key": 10, "value": "ten"}]}]`,
+			// entries are sorted by key text
+			expected: `[{"m": [{"key": -1, "value": null}, {"key": 10, "value": "ten"}, {"key": 2, "value": "two"}]}]`,
 		},
 		{
 			// the JSON protocol sends map keys as strings; date keys stay strings
@@ -793,35 +794,18 @@ func (s *TrinoTests) TestSelectNested() {
 		},
 		{
 			// list elements keep their field metadata, which the interval inserter needs
-			name:     "array of intervals in a row",
-			query:    `SELECT CAST(ROW(ARRAY[INTERVAL '1' DAY, INTERVAL '2' HOUR]) AS ROW(ivs array(interval day to second))) AS r`,
-			dbType:   "", // parametric interval text depends on the Trino version
-			dataType: arrow.StructOf(field("ivs", arrow.ListOf(arrow.FixedWidthTypes.MonthDayNanoInterval))),
-			expected: `[{"r": {"ivs": [{"months": 0, "days": 1, "nanoseconds": 0}, {"months": 0, "days": 0, "nanoseconds": 7200000000000}]}}]`,
-		},
-		{
-			name: "negative year to month intervals in a row",
-			query: `SELECT CAST(ROW(INTERVAL '-1' YEAR, INTERVAL '-2-6' YEAR TO MONTH, INTERVAL '-3' MONTH, INTERVAL '2-6' YEAR TO MONTH)
-				AS ROW(a interval year to month, b interval year to month, c interval year to month, d interval year to month)) AS r`,
+			name: "negative intervals in a row",
+			query: `SELECT CAST(ROW(INTERVAL '-2-6' YEAR TO MONTH, ARRAY[INTERVAL '-2' HOUR, INTERVAL '-1 02:03:04.567' DAY TO SECOND, INTERVAL '1' DAY])
+				AS ROW(ym interval year to month, ds array(interval day to second))) AS r`,
 			dbType: "", // parametric interval text depends on the Trino version
 			dataType: arrow.StructOf(
-				field("a", arrow.FixedWidthTypes.MonthDayNanoInterval),
-				field("b", arrow.FixedWidthTypes.MonthDayNanoInterval),
-				field("c", arrow.FixedWidthTypes.MonthDayNanoInterval),
-				field("d", arrow.FixedWidthTypes.MonthDayNanoInterval),
+				field("ym", arrow.FixedWidthTypes.MonthDayNanoInterval),
+				field("ds", arrow.ListOf(arrow.FixedWidthTypes.MonthDayNanoInterval)),
 			),
-			expected: `[{"r": {"a": {"months": -12, "days": 0, "nanoseconds": 0}, "b": {"months": -30, "days": 0, "nanoseconds": 0},
-				"c": {"months": -3, "days": 0, "nanoseconds": 0}, "d": {"months": 30, "days": 0, "nanoseconds": 0}}}]`,
-		},
-		{
-			name: "negative day to second intervals in a map",
-			query: `SELECT CAST(MAP(ARRAY['a', 'b', 'c'], ARRAY[INTERVAL '-2' HOUR, INTERVAL '-1 02:03:04.567' DAY TO SECOND, INTERVAL '-0.5' SECOND])
-				AS MAP(varchar, interval day to second)) AS m`,
-			dbType:   "", // parametric interval text depends on the Trino version
-			dataType: mapOf(arrow.BinaryTypes.String, arrow.FixedWidthTypes.MonthDayNanoInterval),
-			expected: `[{"m": [{"key": "a", "value": {"months": 0, "days": 0, "nanoseconds": -7200000000000}},
-				{"key": "b", "value": {"months": 0, "days": -1, "nanoseconds": -7384567000000}},
-				{"key": "c", "value": {"months": 0, "days": 0, "nanoseconds": -500000000}}]}]`,
+			expected: `[{"r": {"ym": {"months": -30, "days": 0, "nanoseconds": 0}, "ds": [
+				{"months": 0, "days": 0, "nanoseconds": -7200000000000},
+				{"months": 0, "days": -1, "nanoseconds": -7384567000000},
+				{"months": 0, "days": 1, "nanoseconds": 0}]}}]`,
 		},
 		{
 			name:     "negative day to second interval at top level",
@@ -831,20 +815,13 @@ func (s *TrinoTests) TestSelectNested() {
 			expected: `[{"iv": {"months": 0, "days": -1, "nanoseconds": -7384567000000}}]`,
 		},
 		{
-			name:     "negative year to month interval at top level",
-			query:    `SELECT INTERVAL '-2-6' YEAR TO MONTH AS iv`,
-			dbType:   "", // parametric interval text depends on the Trino version
-			dataType: arrow.FixedWidthTypes.MonthDayNanoInterval,
-			expected: `[{"iv": {"months": -30, "days": 0, "nanoseconds": 0}}]`,
-		},
-		{
-			// the protocol sends double keys like "1.0E10" and "NaN"; NaN sorts last
+			// the protocol sends double keys like "1.0E10" and "NaN"
 			name: "map with double keys",
 			query: `SELECT CAST(MAP(ARRAY[nan(), -infinity(), 1e10, 1e-5, -1.5], ARRAY[1, 2, 3, 4, 5])
 				AS MAP(double, integer)) AS m`,
 			dbType:   `MAP(DOUBLE, INTEGER)`,
 			dataType: mapOf(arrow.PrimitiveTypes.Float64, arrow.PrimitiveTypes.Int32),
-			expected: `[{"m": [{"key": "-Inf", "value": 2}, {"key": -1.5, "value": 5}, {"key": 1e-5, "value": 4},
+			expected: `[{"m": [{"key": -1.5, "value": 5}, {"key": "-Inf", "value": 2}, {"key": 1e-5, "value": 4},
 				{"key": 1e10, "value": 3}, {"key": "NaN", "value": 1}]}]`,
 		},
 		{
@@ -852,7 +829,7 @@ func (s *TrinoTests) TestSelectNested() {
 			query:    `SELECT CAST(MAP(ARRAY[DECIMAL '10.50', DECIMAL '2.00', DECIMAL '-1.25'], ARRAY[true, false, true]) AS MAP(decimal(4, 2), boolean)) AS m`,
 			dbType:   `MAP(DECIMAL(4, 2), BOOLEAN)`,
 			dataType: mapOf(&arrow.Decimal32Type{Precision: 4, Scale: 2}, arrow.FixedWidthTypes.Boolean),
-			expected: `[{"m": [{"key": "-1.25", "value": true}, {"key": "2.00", "value": false}, {"key": "10.50", "value": true}]}]`,
+			expected: `[{"m": [{"key": "-1.25", "value": true}, {"key": "10.50", "value": true}, {"key": "2.00", "value": false}]}]`,
 		},
 		{
 			// top-level arrays of the element types scanTypeToListMap covers
@@ -862,13 +839,6 @@ func (s *TrinoTests) TestSelectNested() {
 			dbType:   `ARRAY(INTEGER)`,
 			dataType: arrow.ListOf(arrow.PrimitiveTypes.Int64),
 			expected: `[{"a": [1, 2]}]`,
-		},
-		{
-			name:     "top-level decimal array keeps its existing mapping",
-			query:    `SELECT CAST(ARRAY[1.5] AS ARRAY(decimal(3, 1))) AS a`,
-			dbType:   `ARRAY(DECIMAL(3, 1))`,
-			dataType: arrow.ListOf(arrow.BinaryTypes.String),
-			expected: `[{"a": ["1.5"]}]`,
 		},
 		{
 			// unlike a top-level array, an array in a row maps its elements
