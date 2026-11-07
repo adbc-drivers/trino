@@ -221,8 +221,11 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 	// Check for Trino-specific types first
 	switch fieldType := field.Type.(type) {
 	case *arrow.TimestampType:
-		// Handle Trino's timezone-naive TIMESTAMP specially
-		if fieldType.TimeZone == "" {
+		// Naive timestamps, and the dates, times and naive timestamps of legacy
+		// arrays (stored as UTC timestamps), keep their wall-clock value.
+		dbTypeName, _ := field.Metadata.GetValue(sqlwrapper.MetaKeyDatabaseTypeName)
+		base := intervalPrecisionPattern.ReplaceAllString(dbTypeName, "")
+		if fieldType.TimeZone == "" || base == "DATE" || base == "TIME" || base == "TIMESTAMP" {
 			return &trinoTimestampInserter{
 				builder: builder.(*array.TimestampBuilder),
 				unit:    fieldType.Unit,
@@ -256,6 +259,13 @@ func (m *trinoTypeConverter) CreateInserter(field *arrow.Field, builder array.Bu
 	case *arrow.ListType:
 		lb := builder.(*array.ListBuilder)
 		elemField := arrow.Field{Name: "item", Type: fieldType.Elem(), Nullable: true}
+		// The client reports array types upper-cased, e.g. ARRAY(TIMESTAMP(3))
+		dbTypeName, _ := field.Metadata.GetValue(sqlwrapper.MetaKeyDatabaseTypeName)
+		if elemTypeName, ok := strings.CutPrefix(dbTypeName, "ARRAY("); ok {
+			elemField.Metadata = arrow.MetadataFrom(map[string]string{
+				sqlwrapper.MetaKeyDatabaseTypeName: strings.TrimSuffix(elemTypeName, ")"),
+			})
+		}
 		childIns, err := m.CreateInserter(&elemField, lb.ValueBuilder())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create child inserter for list: %w", err)
