@@ -133,8 +133,8 @@ Note that:
 - Map keys of types other than integers, floating point, boolean, decimal, UUID
   and strings (such as dates) are returned as strings. Entries are sorted by key
   text.
-- Top-level `ARRAY` columns of simple types, up to three levels deep, keep their
-  existing mapping (e.g. `ARRAY(DATE)` as `list<timestamp[us, UTC]>`, and
+- Top-level `ARRAY` columns of simple types, up to three levels deep, use a
+  separate mapping (e.g. `ARRAY(DATE)` as `list<timestamp[us, UTC]>`, and
   `ARRAY(DECIMAL)`, `ARRAY(INTERVAL ...)` or `ARRAY(UUID)` as `list<string>`);
   inside a `ROW` or `MAP`, or nested deeper, the same array's elements map like
   top-level columns (e.g. `list<date32>`).

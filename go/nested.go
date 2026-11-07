@@ -83,13 +83,13 @@ func parseTrinoType(text string) (*trinoType, error) {
 	var base strings.Builder
 	var params []int64
 	for rest := text; ; {
-		open := strings.IndexByte(rest, '(')
-		if open < 0 {
+		paren := strings.IndexByte(rest, '(')
+		if paren < 0 {
 			base.WriteString(rest)
 			break
 		}
-		base.WriteString(rest[:open])
-		args, end, err := splitArgs(rest, open)
+		base.WriteString(rest[:paren])
+		args, end, err := splitArgs(rest, paren)
 		if err != nil {
 			return nil, err
 		}
@@ -188,10 +188,13 @@ func normalizeSpaces(s string) string {
 // through ConvertRawColumnType, so they get the same Arrow type as top-level
 // columns.
 func (m *trinoTypeConverter) nestedArrowField(name string, t *trinoType) (arrow.Field, error) {
-	field := arrow.Field{Name: name, Nullable: true, Metadata: arrow.MetadataFrom(map[string]string{
-		sqlwrapper.MetaKeyDatabaseTypeName: t.text,
-		sqlwrapper.MetaKeyColumnName:       name,
-	})}
+	field := arrow.Field{Name: name, Nullable: true}
+	if len(t.children) > 0 { // scalars get their metadata from ConvertRawColumnType
+		field.Metadata = arrow.MetadataFrom(map[string]string{
+			sqlwrapper.MetaKeyDatabaseTypeName: t.text,
+			sqlwrapper.MetaKeyColumnName:       name,
+		})
+	}
 	children := make([]arrow.Field, len(t.children))
 	for i, child := range t.children {
 		childName := "item"
