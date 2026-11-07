@@ -145,9 +145,9 @@ func TestMapInserter(t *testing.T) {
 	ins, bldr = newInserter(t, mem, "MAP(INTEGER, VARCHAR)")
 	defer bldr.Release()
 	require.NoError(t, ins.AppendValue(map[string]any{"10": "a", "2": "b", "-1": nil}))
-	ints := bldr.NewArray()
-	defer ints.Release()
-	assert.Equal(t, `[{[-1 10 2] [(null) "a" "b"]}]`, ints.String())
+	arr = bldr.NewArray()
+	defer arr.Release()
+	assert.Equal(t, `[{[-1 10 2] [(null) "a" "b"]}]`, arr.String())
 	assert.ErrorContains(t, ins.AppendValue(map[string]any{"x": "c"}), `MAP key "x"`)
 }
 
@@ -206,20 +206,19 @@ func TestDeeplyNested(t *testing.T) {
 
 			// walk down to the BIGINT
 			levels := 0
+		walk:
 			for {
-				next := arr
 				switch a := arr.(type) {
 				case *array.Map: // before *array.List, which it embeds
-					next = a.Items()
+					arr = a.Items()
 				case *array.List:
-					next = a.ListValues()
+					arr = a.ListValues()
 				case *array.Struct:
-					next = a.Field(0)
+					arr = a.Field(0)
+				default:
+					break walk
 				}
-				if next == arr {
-					break
-				}
-				arr, levels = next, levels+1
+				levels++
 			}
 			assert.Equal(t, tc.depth, levels)
 			require.IsType(t, &array.Int64{}, arr)
@@ -228,9 +227,9 @@ func TestDeeplyNested(t *testing.T) {
 	}
 }
 
-// FuzzConvertNestedColumnType checks that any ARRAY, MAP or ROW type text
-// converts without panicking or failing (unparsable types fall back to the
-// default conversion). The seeds also run in plain `go test`.
+// FuzzConvertNestedColumnType checks that any type text, alone or inside an
+// ARRAY or ROW, converts without panicking or failing (unparsable types fall
+// back to the default conversion). The seeds also run in plain `go test`.
 func FuzzConvertNestedColumnType(f *testing.F) {
 	for _, seed := range []string{
 		`ROW(X INTEGER, "MY FIELD" ARRAY(VARCHAR(3)), TIMESTAMP TIMESTAMP(3) WITH TIME ZONE)`,

@@ -174,7 +174,7 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 	// ARRAY, MAP and ROW types the scan type does not cover, e.g. MAP(VARCHAR,
 	// BIGINT), ROW(...) or ARRAY(ROW(...)), are converted from their type
 	// signature. If it cannot be parsed, fall back to the default conversion.
-	if parsed, err := parseTrinoType(colType.DatabaseTypeName); err == nil && parsed.children != nil {
+	if parsed, err := parseTrinoType(colType.DatabaseTypeName); err == nil && len(parsed.children) > 0 {
 		if field, err := m.nestedArrowField(colType.Name, parsed); err == nil {
 			return field.Type, colType.Nullable, field.Metadata, nil
 		}
@@ -475,7 +475,7 @@ func parseYearToMonth(intervalStr string) (arrow.MonthDayNanoInterval, error) {
 		return arrow.MonthDayNanoInterval{}, fmt.Errorf("invalid months: %w", err)
 	}
 
-	totalMonths := int64(years)*12 + int64(months) // int64: -(2^31) is only reached after negating
+	totalMonths := int64(years)*12 + int64(months) // int64: 2^31 months overflows int32 before negating
 	if negative {
 		totalMonths = -totalMonths
 	}

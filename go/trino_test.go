@@ -918,21 +918,19 @@ func (s *TrinoTests) TestSelectDeeplyNested() {
 
 	levels := 0
 	arr := rdr.RecordBatch().Column(0)
+walk:
 	for {
 		s.Require().Equal(1, arr.Len(), "level %d", levels)
-		next := arr
 		switch a := arr.(type) {
 		case *array.Map: // before *array.List, which it embeds
-			next = a.Items()
+			arr = a.Items()
 		case *array.List:
-			next = a.ListValues()
+			arr = a.ListValues()
 		case *array.Struct:
-			next = a.Field(0)
+			arr = a.Field(0)
+		default:
+			break walk
 		}
-		if next == arr {
-			break
-		}
-		arr = next
 		levels++
 	}
 	s.Equal(depth, levels)
