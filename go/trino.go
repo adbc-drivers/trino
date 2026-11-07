@@ -354,24 +354,19 @@ func (ins *trinoTimestampInserter) AppendValue(sqlValue any) error {
 		return fmt.Errorf("expected time.Time for timestamp, got %T", sqlValue)
 	}
 
-	// For Trino's naive timestamps, treat the time.Time as wall-clock time
-	// Create a new time.Time in UTC with the same wall-clock values
-	// This preserves the naive semantics while working with Arrow's expectations
-	naiveTime := time.Date(
-		t.Year(), t.Month(), t.Day(),
-		t.Hour(), t.Minute(), t.Second(), t.Nanosecond(),
-		time.UTC, // Force UTC to prevent timezone conversion
-	)
-
-	if ins.zoned {
-		naiveTime = t
+	layout := time.RFC3339Nano
+	if !ins.zoned {
+		// Keep a naive timestamp's wall-clock time: create a time in UTC with
+		// the same wall-clock values, to prevent time zone conversion.
+		t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
+		layout = "2006-01-02 15:04:05.999999999"
 	}
 	// TimestampBuilder.AppendTime would panic for times the unit cannot
 	// represent, like 9999-12-31 in nanoseconds (which cover 1677 to 2262).
-	ts, err := arrow.TimestampFromTime(naiveTime, ins.unit)
+	ts, err := arrow.TimestampFromTime(t, ins.unit)
 	if err != nil {
 		return fmt.Errorf("timestamp %s cannot be represented in %s precision; cast it to a lower precision, e.g. TIMESTAMP(6) or TIMESTAMP(6) WITH TIME ZONE: %w",
-			naiveTime.Format(time.RFC3339Nano), ins.unit, err)
+			t.Format(layout), ins.unit, err)
 	}
 	ins.builder.Append(ts)
 	return nil

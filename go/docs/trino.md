@@ -119,7 +119,8 @@ returned as Arrow month-day-nanosecond intervals. Fractional seconds beyond nine
 digits are truncated to nanoseconds.
 
 Timestamps with more than six fractional digits are returned in nanoseconds
-(microseconds in top-level arrays), which only cover the years 1677 to 2262;
+(microseconds in top-level arrays up to three levels deep), which only cover
+the years 1677 to 2262;
 other values fail the query. Cast them to `TIMESTAMP(6)` (with or without time
 zone) to read them.
 
@@ -129,13 +130,15 @@ except that:
 
 - ROW field names are lower-cased, as the Trino Go client upper-cases type
   names: quoted names like `"MixedCase"` lose their case. Anonymous fields are
-  named `field0`, `field1`, and so on.
+  named `field0`, `field1`, and so on. Names are not made unique.
 - Map keys of types other than integers, floating point, boolean, decimal, UUID
   and strings (such as dates) are returned as strings. Entries are sorted by key
   text.
 - Top-level `ARRAY` columns of simple types, up to three levels deep, keep their
   existing mapping (e.g. `ARRAY(INTEGER)` as `list<int64>`); the same array in a
-  `ROW` or `MAP` maps like top-level columns (`list<int32>`).
+  `ROW` or `MAP`, or nested deeper, maps like top-level columns (`list<int32>`).
+- Structs and maps are only supported when reading, not for bulk ingestion or
+  bound parameters.
 
 ## Options
 

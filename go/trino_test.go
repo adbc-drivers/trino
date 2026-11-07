@@ -825,7 +825,7 @@ func (s *TrinoTests) TestSelectNested() {
 				{"key": 1e10, "value": 3}, {"key": "NaN", "value": 1}]}]`,
 		},
 		{
-			name:     "map with boolean and decimal keys",
+			name:     "map with decimal keys",
 			query:    `SELECT CAST(MAP(ARRAY[DECIMAL '10.50', DECIMAL '2.00', DECIMAL '-1.25'], ARRAY[true, false, true]) AS MAP(decimal(4, 2), boolean)) AS m`,
 			dbType:   `MAP(DECIMAL(4, 2), BOOLEAN)`,
 			dataType: mapOf(&arrow.Decimal32Type{Precision: 4, Scale: 2}, arrow.FixedWidthTypes.Boolean),

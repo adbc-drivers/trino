@@ -326,8 +326,11 @@ func (ins *structInserter) AppendValue(sqlValue any) error {
 		return nil
 	}
 	row, ok := sqlValue.(rowValue)
-	if !ok || row.Len() != len(ins.children) {
-		return fmt.Errorf("expected ROW with %d fields, got %T %v", len(ins.children), sqlValue, sqlValue)
+	if !ok {
+		return fmt.Errorf("expected trino.Row for ROW type, got %T", sqlValue)
+	}
+	if row.Len() != len(ins.children) {
+		return fmt.Errorf("expected ROW with %d fields, got %d", len(ins.children), row.Len())
 	}
 	ins.builder.Append(true)
 	for i, child := range ins.children {
