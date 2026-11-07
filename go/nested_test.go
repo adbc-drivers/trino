@@ -140,6 +140,15 @@ func TestMapInserter(t *testing.T) {
 	arr := bldr.NewArray()
 	defer arr.Release()
 	assert.Equal(t, `[{[false true] [2 1]}]`, arr.String())
+
+	// the default numeric inserter parses key text too, and rejects bad keys
+	ins, bldr = newInserter(t, mem, "MAP(INTEGER, VARCHAR)")
+	defer bldr.Release()
+	require.NoError(t, ins.AppendValue(map[string]any{"10": "a", "2": "b", "-1": nil}))
+	ints := bldr.NewArray()
+	defer ints.Release()
+	assert.Equal(t, `[{[-1 10 2] [(null) "a" "b"]}]`, ints.String())
+	assert.ErrorContains(t, ins.AppendValue(map[string]any{"x": "c"}), `MAP key "x"`)
 }
 
 // fakeRow stands in for trino.Row, which has no exported constructor.
