@@ -145,6 +145,13 @@ func TestMapInserter(t *testing.T) {
 	defer arr.Release()
 	// keys are converted to their type and sorted by their text
 	assert.Equal(t, `[{[-1 10 2] [(null) "ten" "two"]} (null) {[] []}]`, arr.String())
+
+	ins, bldr = newInserter(t, mem, "MAP(BOOLEAN, INTEGER)")
+	defer bldr.Release()
+	require.NoError(t, ins.AppendValue(map[string]any{"true": int64(1), "false": int64(2)}))
+	arr = bldr.NewArray()
+	defer arr.Release()
+	assert.Equal(t, `[{[false true] [2 1]}]`, arr.String())
 }
 
 // fakeRow stands in for trino.Row, which has no exported constructor.

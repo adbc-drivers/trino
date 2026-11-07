@@ -119,10 +119,9 @@ returned as Arrow month-day-nanosecond intervals. Fractional seconds beyond nine
 digits are truncated to nanoseconds.
 
 Timestamps with more than six fractional digits are returned in nanoseconds
-(microseconds in top-level arrays up to three levels deep), which only cover
-the years 1677 to 2262;
-other values fail the query. Cast them to `TIMESTAMP(6)` (with or without time
-zone) to read them.
+(in microseconds in top-level arrays up to three levels deep). Nanosecond
+timestamps only cover the years 1677 to 2262; other values fail the query. Cast
+them to `TIMESTAMP(6)` (with or without time zone) to read them.
 
 `ROW` values are returned as Arrow structs and `MAP` values as Arrow maps, at any
 nesting depth. Values inside them get the same Arrow types as top-level columns,
@@ -135,8 +134,9 @@ except that:
   and strings (such as dates) are returned as strings. Entries are sorted by key
   text.
 - Top-level `ARRAY` columns of simple types, up to three levels deep, keep their
-  existing mapping (e.g. `ARRAY(INTEGER)` as `list<int64>`); the same array in a
-  `ROW` or `MAP`, or nested deeper, maps like top-level columns (`list<int32>`).
+  existing mapping (e.g. `ARRAY(DATE)` as `list<timestamp[us, UTC]>`); the same
+  array in a `ROW` or `MAP`, or nested deeper, maps like top-level columns
+  (`list<date32>`).
 - Structs and maps are only supported when reading, not for bulk ingestion or
   bound parameters.
 

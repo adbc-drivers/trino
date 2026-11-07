@@ -365,8 +365,11 @@ func (ins *trinoTimestampInserter) AppendValue(sqlValue any) error {
 	// represent, like 9999-12-31 in nanoseconds (which cover 1677 to 2262).
 	ts, err := arrow.TimestampFromTime(t, ins.unit)
 	if err != nil {
-		return fmt.Errorf("timestamp %s cannot be represented in %s precision; cast it to a lower precision, e.g. TIMESTAMP(6) or TIMESTAMP(6) WITH TIME ZONE: %w",
-			t.Format(layout), ins.unit, err)
+		cast := "TIMESTAMP(6)"
+		if ins.zoned {
+			cast += " WITH TIME ZONE"
+		}
+		return fmt.Errorf("timestamp %s cannot be represented in %s precision; cast it to %s", t.Format(layout), ins.unit, cast)
 	}
 	ins.builder.Append(ts)
 	return nil
