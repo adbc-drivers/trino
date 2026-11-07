@@ -748,6 +748,46 @@ func TestTrinoIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(TrinoTestSuite))
 }
 
+// TestSelectTimeArraysSessionZone checks that date, time and timestamp array
+// elements do not shift with the session time zone.
+func TestSelectTimeArraysSessionZone(t *testing.T) {
+	withQuirks(t, func(q *TrinoQuirks) {
+		uri, err := url.Parse(q.dsn)
+		require.NoError(t, err)
+		params := uri.Query()
+		params.Set("timezone", "Asia/Kathmandu")
+		uri.RawQuery = params.Encode()
+		q.dsn = uri.String()
+
+		ctx := context.Background()
+		drv := q.SetupDriver(t)
+		defer q.TearDownDriver(t, drv)
+		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
+		require.NoError(t, err)
+		defer func() { require.NoError(t, db.Close(ctx)) }()
+		cnxn, err := db.Open(ctx)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, cnxn.Close(ctx)) }()
+		stmt, err := cnxn.NewStatement(ctx)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, stmt.Close(ctx)) }()
+
+		require.NoError(t, stmt.SetSqlQuery(ctx, `SELECT ARRAY[DATE '2024-03-10'] AS d,
+			ARRAY[TIME '03:00:07.123456'] AS t,
+			ARRAY[ARRAY[TIMESTAMP '2024-07-01 12:00:00.123']] AS ts,
+			ARRAY[TIMESTAMP '2024-07-01 12:00:00.123 UTC'] AS tstz`))
+		rdr, _, err := stmt.ExecuteQuery(ctx)
+		require.NoError(t, err)
+		defer rdr.Release()
+		require.Truef(t, rdr.Next(), "no record, error? %s", rdr.Err())
+		expected := testutil.RecordFromJSON(t, q.Alloc(), rdr.Schema(), `[{
+			"d": ["2024-03-10T00:00:00Z"], "t": ["0000-01-01T03:00:07.123456Z"],
+			"ts": [["2024-07-01T12:00:00.123Z"]], "tstz": ["2024-07-01T12:00:00.123Z"]}]`)
+		defer expected.Release()
+		assert.Truef(t, array.RecordEqual(expected, rdr.RecordBatch()), "expected: %s\ngot: %s", expected, rdr.RecordBatch())
+	})
+}
+
 // TestURIParsing tests the parseTrinoURIToDSN function with various URI formats
 func TestURIParsing(t *testing.T) {
 	factory := trino.NewTrinoDBFactory()
