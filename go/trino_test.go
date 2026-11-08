@@ -1273,21 +1273,36 @@ func TestIngestUnsigned(t *testing.T) {
 		_, err = stmt.ExecuteUpdate(ctx)
 		require.NoError(t, err)
 
-		require.NoError(t, stmt.SetSqlQuery(ctx, `SELECT
-			typeof(u8), typeof(u16), typeof(u32), typeof(u64),
-			CAST(u8 AS VARCHAR), CAST(u16 AS VARCHAR), CAST(u32 AS VARCHAR), CAST(u64 AS VARCHAR)
-			FROM `+tableName))
-		reader, _, err := stmt.ExecuteQuery(ctx)
-		require.NoError(t, err)
-		defer reader.Release()
-		require.True(t, reader.Next())
-		var got []string
-		for _, col := range reader.RecordBatch().Columns() {
-			got = append(got, col.ValueStr(0))
+		firstRow := func(query string) []string {
+			require.NoError(t, stmt.SetSqlQuery(ctx, query))
+			reader, _, err := stmt.ExecuteQuery(ctx)
+			require.NoError(t, err)
+			defer reader.Release()
+			require.True(t, reader.Next())
+			var row []string
+			for _, col := range reader.RecordBatch().Columns() {
+				row = append(row, col.ValueStr(0))
+			}
+			return row
 		}
+
 		assert.Equal(t, []string{
 			"smallint", "integer", "bigint", "decimal(20,0)",
 			"255", "65535", "4294967295", "18446744073709551615",
-		}, got)
+		}, firstRow(`SELECT
+			typeof(u8), typeof(u16), typeof(u32), typeof(u64),
+			CAST(u8 AS VARCHAR), CAST(u16 AS VARCHAR), CAST(u32 AS VARCHAR), CAST(u64 AS VARCHAR)
+			FROM `+tableName))
+
+		// As parameters, uint64 values in the BIGINT range stay integers, so
+		// "? / 2" divides integers; larger ones are decimals.
+		schema = arrow.NewSchema([]arrow.Field{
+			{Name: "small", Type: arrow.PrimitiveTypes.Uint64},
+			{Name: "large", Type: arrow.PrimitiveTypes.Uint64},
+		}, nil)
+		params := testutil.RecordFromJSON(t, q.Alloc(), schema, `[{"small": 5, "large": 18446744073709551615}]`)
+		defer params.Release()
+		require.NoError(t, stmt.Bind(ctx, params))
+		assert.Equal(t, []string{"2", "18446744073709551615"}, firstRow(`SELECT ? / 2, CAST(? AS VARCHAR)`))
 	})
 }

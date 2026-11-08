@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"regexp"
@@ -549,8 +550,12 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		return uint16(a.Value(index)), nil
 
 	case *array.Uint64:
-		// For Trino driver, convert Uint64 to a DECIMAL literal ("123."): Trino has no
-		// unsigned types, and values above the BIGINT range are no valid integer literals
+		// For Trino driver, convert Uint64 to int64, or above the BIGINT range to a
+		// DECIMAL literal ("123."): Trino has no unsigned types, and such values are no
+		// valid integer literals
+		if v := a.Value(index); v <= math.MaxInt64 {
+			return int64(v), nil
+		}
 		return trino.Numeric(strconv.FormatUint(a.Value(index), 10) + "."), nil
 
 	case *array.Time32:
