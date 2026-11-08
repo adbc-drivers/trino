@@ -1228,51 +1228,21 @@ func TestHTTPHeaderOptions(t *testing.T) {
 }
 
 // TestIngestTemporary checks that bulk ingest into a temporary table, which
-// Trino does not have, fails instead of creating a permanent table.
+// Trino does not have, fails without sending any query.
 func TestIngestTemporary(t *testing.T) {
-	withQuirks(t, func(q *TrinoQuirks) {
-		ctx := context.Background()
+	ctx := context.Background()
+	srv := newFakeTrinoServer(t)
+	stmt := openFakeTrino(t, srv, nil)
 
-		drv := q.SetupDriver(t)
-		defer q.TearDownDriver(t, drv)
-
-		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, db.Close(ctx))
-		}()
-
-		cnxn, err := db.Open(ctx)
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, cnxn.Close(ctx))
-		}()
-
-		stmt, err := cnxn.NewStatement(ctx)
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, stmt.Close(ctx))
-		}()
-
-		tableName := "ingest_temporary"
-		schema := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int64}}, nil)
-		batch := testutil.RecordFromJSON(t, q.Alloc(), schema, `[{"x": 1}]`)
-		defer batch.Release()
-		defer func() {
-			_ = q.DropTable(cnxn, tableName)
-		}()
-		require.NoError(t, stmt.Bind(ctx, batch))
-		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, tableName))
-		require.NoError(t, stmt.SetOption(ctx, adbc.OptionValueIngestTemporary, adbc.OptionValueEnabled))
-		_, err = stmt.ExecuteUpdate(ctx)
-		var adbcErr adbc.Error
-		require.ErrorAs(t, err, &adbcErr)
-		assert.Equal(t, adbc.StatusNotImplemented, adbcErr.Code)
-
-		require.NoError(t, stmt.SetSqlQuery(ctx, "SHOW TABLES LIKE '"+tableName+"'"))
-		reader, _, err := stmt.ExecuteQuery(ctx)
-		require.NoError(t, err)
-		defer reader.Release()
-		assert.False(t, reader.Next(), "table was created")
-	})
+	schema := arrow.NewSchema([]arrow.Field{{Name: "ints", Type: arrow.PrimitiveTypes.Int64, Nullable: true}}, nil)
+	batch := testutil.RecordFromJSON(t, memory.DefaultAllocator, schema, `[{"ints": 1}]`)
+	defer batch.Release()
+	require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, "foo"))
+	require.NoError(t, stmt.SetOption(ctx, adbc.OptionValueIngestTemporary, adbc.OptionValueEnabled))
+	require.NoError(t, stmt.Bind(ctx, batch))
+	_, err := stmt.ExecuteUpdate(ctx)
+	var adbcErr adbc.Error
+	require.ErrorAs(t, err, &adbcErr)
+	assert.Equal(t, adbc.StatusNotImplemented, adbcErr.Code)
+	assert.Empty(t, srv.queries())
 }
