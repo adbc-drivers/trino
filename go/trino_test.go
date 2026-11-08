@@ -900,6 +900,17 @@ func TestURIParsing(t *testing.T) {
 			expectedDSN: "http://user:pass@localhost:9999?SSL=false&catalog=hive&schema=default",
 		},
 		{
+			name:        "trino with SSL=0",
+			trinoURI:    "trino://user:pass@localhost/hive?SSL=0",
+			expectedDSN: "http://user:pass@localhost:8080?SSL=0&catalog=hive",
+		},
+		{
+			name:          "trino with invalid SSL value",
+			trinoURI:      "trino://user:pass@localhost/hive?SSL=maybe",
+			shouldError:   true,
+			errorContains: "invalid SSL value",
+		},
+		{
 			name:        "trino with trailing slash",
 			trinoURI:    "trino://user:pass@localhost:8080/",
 			expectedDSN: "https://user:pass@localhost:8080",
@@ -919,7 +930,7 @@ func TestURIParsing(t *testing.T) {
 			name:          "trino with catalog in path and query",
 			trinoURI:      "trino://user:pass@localhost:8080/hive?catalog=memory",
 			shouldError:   true,
-			errorContains: "catalog is set both in the URI path and the catalog parameter",
+			errorContains: "catalog is set both in the Trino URI path and the catalog parameter",
 		},
 		{
 			name:        "trino with encoded slash in schema",
@@ -937,24 +948,8 @@ func TestURIParsing(t *testing.T) {
 			trinoURI:    "TRINO://user:pass@localhost:8080/hive",
 			expectedDSN: "https://user:pass@localhost:8080?catalog=hive",
 		},
-		{
-			name:        "trino with SSL=0",
-			trinoURI:    "trino://user:pass@localhost/hive?SSL=0",
-			expectedDSN: "http://user:pass@localhost:8080?SSL=0&catalog=hive",
-		},
-		{
-			name:          "trino with invalid SSL value",
-			trinoURI:      "trino://user:pass@localhost/hive?SSL=maybe",
-			shouldError:   true,
-			errorContains: "invalid SSL value",
-		},
 
 		// dsn tests
-		{
-			name:        "upper-case https scheme (DSN format)",
-			trinoURI:    "HTTPS://user:pass@localhost:8443?catalog=hive",
-			expectedDSN: "https://user:pass@localhost:8443?catalog=hive",
-		},
 		{
 			name:        "session properties (DSN format)",
 			trinoURI:    "http://user:pass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3D8%2Cjoin_distribution_type%3DBROADCAST",
@@ -973,6 +968,11 @@ func TestURIParsing(t *testing.T) {
 			username:    "newuser",
 			password:    "newpass",
 			expectedDSN: "http://newuser:newpass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3D8%2Cjoin_distribution_type%3DBROADCAST",
+		},
+		{
+			name:        "upper-case https scheme (DSN format)",
+			trinoURI:    "HTTPS://user:pass@localhost:8443?catalog=hive",
+			expectedDSN: "https://user:pass@localhost:8443?catalog=hive",
 		},
 	}
 

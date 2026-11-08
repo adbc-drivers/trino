@@ -298,11 +298,14 @@ func hasPrefixFold(s, prefix string) bool {
 }
 
 // parseTrinoURIToDSN converts a Trino URI to Trino DSN format using pure URL manipulation.
+// It rejects an SSL value that is not a boolean, a path with more than
+// /catalog/schema or an empty catalog, and a catalog or schema given both in
+// the path and as a query parameter.
 // Examples:
 //
-//	trino://localhost:8080/hive/default → http://localhost:8080?catalog=hive&schema=default
-//	trino://user:pass@host:8080/postgresql/public → http://user:pass@host:8080?catalog=postgresql&schema=public
-//	trino://user@host/memory/default?SSL=true → https://user@host:443?catalog=memory&schema=default&SSL=true
+//	trino://localhost:8080/hive/default → https://localhost:8080?catalog=hive&schema=default
+//	trino://user:pass@host:8080/postgresql/public?SSL=false → http://user:pass@host:8080?SSL=false&catalog=postgresql&schema=public
+//	trino://user@host/memory/default → https://user@host:8443?catalog=memory&schema=default
 func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string) (string, error) {
 	u, err := url.Parse(trinoURI)
 	if err != nil {
@@ -315,7 +318,7 @@ func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string)
 	if ssl := queryParams.Get("SSL"); ssl != "" {
 		enabled, err := strconv.ParseBool(strings.ToLower(ssl))
 		if err != nil {
-			return "", fmt.Errorf("invalid SSL value %q in Trino URI: expected true or false", ssl)
+			return "", fmt.Errorf("invalid SSL value %q in Trino URI: expected true or false (or 1 or 0)", ssl)
 		}
 		if !enabled {
 			scheme = "http"
@@ -330,12 +333,9 @@ func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string)
 		}
 		for i, name := range []string{"catalog", "schema"}[:len(parts)] {
 			if queryParams.Has(name) {
-				return "", fmt.Errorf("%s is set both in the URI path and the %s parameter", name, name)
+				return "", fmt.Errorf("%[1]s is set both in the Trino URI path and the %[1]s parameter", name)
 			}
-			value, err := url.PathUnescape(parts[i])
-			if err != nil {
-				return "", fmt.Errorf("invalid %s in Trino URI: %w", name, err)
-			}
+			value, _ := url.PathUnescape(parts[i]) // cannot fail: url.Parse validated the escapes
 			queryParams.Set(name, value)
 		}
 	}
