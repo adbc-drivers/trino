@@ -1253,25 +1253,38 @@ func TestBindDateTimestampSessionTimeZone(t *testing.T) {
 		schema := arrow.NewSchema([]arrow.Field{
 			{Name: "d1", Type: arrow.FixedWidthTypes.Date32},
 			{Name: "d2", Type: arrow.FixedWidthTypes.Date32},
+			{Name: "d64", Type: arrow.FixedWidthTypes.Date64},
 			{Name: "ts1", Type: &arrow.TimestampType{Unit: arrow.Microsecond}},
 			{Name: "ts2", Type: &arrow.TimestampType{Unit: arrow.Microsecond}},
+			{Name: "ts_ns", Type: &arrow.TimestampType{Unit: arrow.Nanosecond}},
+			{Name: "ts_utc", Type: arrow.FixedWidthTypes.Timestamp_us},
 		}, nil)
-		params := testutil.RecordFromJSON(t, q.Alloc(), schema,
-			`[{"d1": "2024-01-15", "d2": "2024-01-15", "ts1": 1705320000000000, "ts2": 1705320000000000}]`)
+		params := testutil.RecordFromJSON(t, q.Alloc(), schema, `[{
+			"d1": "2024-01-15", "d2": "2024-01-15", "d64": 1705276800000,
+			"ts1": 1705320000000000, "ts2": 1705320000000000,
+			"ts_ns": -14182939876543211, "ts_utc": 1705320000000000
+		}]`)
 		defer params.Release()
 
-		require.NoError(t, stmt.SetSqlQuery(ctx,
-			`SELECT typeof(?), ? = DATE '2024-01-15', typeof(?), ? = TIMESTAMP '2024-01-15 12:00:00'`))
+		require.NoError(t, stmt.SetSqlQuery(ctx, `SELECT
+			typeof(?), ? = DATE '2024-01-15', ? = DATE '2024-01-15',
+			typeof(?), ? = TIMESTAMP '2024-01-15 12:00:00',
+			? = TIMESTAMP '1969-07-20 20:17:40.123456789',
+			? = TIMESTAMP '2024-01-15 12:00:00 UTC'`))
 		require.NoError(t, stmt.Bind(ctx, params))
 		reader, _, err := stmt.ExecuteQuery(ctx)
 		require.NoError(t, err)
 		defer reader.Release()
 		require.True(t, reader.Next())
 		rec := reader.RecordBatch()
-		assert.Equal(t, "date", rec.Column(0).ValueStr(0))
-		assert.Equal(t, "true", rec.Column(1).ValueStr(0))
-		assert.Regexp(t, `^timestamp\(\d+\)$`, rec.Column(2).ValueStr(0))
-		assert.Equal(t, "true", rec.Column(3).ValueStr(0))
+		var got []string
+		for _, col := range rec.Columns() {
+			got = append(got, col.ValueStr(0))
+		}
+		assert.Equal(t, "date", got[0])
+		assert.Regexp(t, `^timestamp\(\d+\)$`, got[3])
+		assert.Equal(t, []string{"true", "true", "true", "true", "true"},
+			[]string{got[1], got[2], got[4], got[5], got[6]})
 		require.False(t, reader.Next())
 		require.NoError(t, reader.Err())
 	})
