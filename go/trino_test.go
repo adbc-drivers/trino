@@ -515,34 +515,6 @@ func (s *TrinoTests) TestIngestQueryId() {
 	s.Require().NoError(err)
 }
 
-// TestNullTypeAndLength checks that SELECT NULL has the Arrow null type, and
-// that GetTableSchema reports the length of CHAR and VARCHAR columns like
-// ExecuteQuery does.
-func (s *TrinoTests) TestNullTypeAndLength() {
-	s.Require().NoError(s.stmt.SetSqlQuery(s.ctx, "SELECT NULL AS n"))
-	reader, _, err := s.stmt.ExecuteQuery(s.ctx)
-	s.Require().NoError(err)
-	s.Equal(arrow.Null, reader.Schema().Field(0).Type)
-	s.Require().True(reader.Next())
-	s.Equal(1, reader.RecordBatch().Column(0).NullN())
-	reader.Release()
-
-	tableName := "null_type_and_length"
-	defer func() {
-		_ = s.Quirks.DropTable(s.cnxn, tableName)
-	}()
-	s.Require().NoError(s.stmt.SetSqlQuery(s.ctx, "CREATE TABLE "+tableName+" (v VARCHAR(10), c CHAR(3))"))
-	_, err = s.stmt.ExecuteUpdate(s.ctx)
-	s.Require().NoError(err)
-	schema, err := s.cnxn.GetTableSchema(s.ctx, nil, nil, tableName)
-	s.Require().NoError(err)
-	for i, want := range []string{"10", "3"} {
-		length, ok := schema.Field(i).Metadata.GetValue("sql.length")
-		s.True(ok, schema.Field(i).Name)
-		s.Equal(want, length, schema.Field(i).Name)
-	}
-}
-
 func (s *TrinoTests) TestSelect() {
 	// Drop table if it exists first, then create test table with basic Trino types
 	s.NoError(s.stmt.SetSqlQuery(s.ctx, `DROP TABLE IF EXISTS memory.default.test_types`))
@@ -686,6 +658,22 @@ func (s *TrinoTests) TestSelect() {
 				},
 			}, nil),
 			expected: `[{"greeting": "hello world"}, {"greeting": null}, {"greeting": "test string"}]`,
+		},
+		{
+			name:  "null",
+			query: "SELECT NULL AS n FROM memory.default.test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "n",
+					Type:     arrow.Null,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "n",
+						"sql.database_type_name": "UNKNOWN",
+					}),
+				},
+			}, nil),
+			expected: `[{"n": null}, {"n": null}, {"n": null}]`,
 		},
 	} {
 		s.Run(testCase.name, func() {

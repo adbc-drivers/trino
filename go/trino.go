@@ -83,11 +83,11 @@ func (m *trinoTypeConverter) ConvertRawColumnType(colType sqlwrapper.ColumnType)
 	switch typeName {
 	case "UNKNOWN":
 		// The type of a bare NULL, e.g. SELECT NULL
-		return arrow.Null, true, arrow.NewMetadata(
-			[]string{sqlwrapper.MetaKeyDatabaseTypeName, sqlwrapper.MetaKeyColumnName},
-			[]string{colType.DatabaseTypeName, colType.Name},
-		), nil
-
+		metadata := arrow.MetadataFrom(map[string]string{
+			sqlwrapper.MetaKeyDatabaseTypeName: colType.DatabaseTypeName,
+			sqlwrapper.MetaKeyColumnName:       colType.Name,
+		})
+		return arrow.Null, colType.Nullable, metadata, nil
 	case "TIMESTAMP", "TIMESTAMP WITH TIME ZONE":
 		// Try to get precision from Precision field (which represents fractional seconds precision)
 		var timestampType arrow.DataType
