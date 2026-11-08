@@ -204,6 +204,10 @@ var _ sqlwrapper.BulkIngester = (*trinoConnectionImpl)(nil)
 
 // ExecuteBulkIngest performs Trino bulk ingest using batched INSERT statements.
 func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwrapper.StatementImpl, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
+	if options.Temporary {
+		return -1, c.ErrorHelper.NotImplemented("Trino does not support temporary tables")
+	}
+
 	// inject the query ID capture through everything
 	params := stmt.(*trinoStatement).GetAdditionalExecParams()
 
