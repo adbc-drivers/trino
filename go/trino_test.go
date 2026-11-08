@@ -863,6 +863,11 @@ func TestURIParsing(t *testing.T) {
 			expectedDSN: "https://user:pass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3D8%2Cjoin_distribution_type%3DBROADCAST",
 		},
 		{
+			name:        "session properties separated by semicolons",
+			trinoURI:    "trino://user:pass@localhost:8080/hive/default?session_properties=task_concurrency:2;query_priority:1",
+			expectedDSN: "https://user:pass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3A2%3Bquery_priority%3A1",
+		},
+		{
 			name:        "url encoded catalog/schema names",
 			trinoURI:    "trino://user:pass@localhost:8080/my%20catalog/my%20schema?source=test",
 			expectedDSN: "https://user:pass@localhost:8080?catalog=my+catalog&schema=my+schema&source=test",
@@ -915,6 +920,11 @@ func TestURIParsing(t *testing.T) {
 			name:        "session properties (DSN format)",
 			trinoURI:    "http://user:pass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3D8%2Cjoin_distribution_type%3DBROADCAST",
 			expectedDSN: "http://user:pass@localhost:8080?catalog=hive&schema=default&session_properties=task_concurrency%3D8%2Cjoin_distribution_type%3DBROADCAST",
+		},
+		{
+			name:        "session properties separated by semicolons (DSN format)",
+			trinoURI:    "http://user:pass@localhost:8080?catalog=hive&session_properties=task_concurrency:2;query_priority:1",
+			expectedDSN: "http://user:pass@localhost:8080?catalog=hive&session_properties=task_concurrency:2%3Bquery_priority:1",
 		},
 		{
 			name:        "add credentials via options (DSN format)",
