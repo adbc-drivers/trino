@@ -218,6 +218,7 @@ func (q *TrinoQuirks) SampleTableSchemaMetadata(tblName string, dt arrow.DataTyp
 	case arrow.STRING:
 		metadata["sql.column_name"] = "strings"
 		metadata["sql.database_type_name"] = "VARCHAR"
+		metadata["sql.length"] = "255"
 	case arrow.FLOAT32:
 		metadata["sql.column_name"] = "floats"
 		metadata["sql.database_type_name"] = "float"
