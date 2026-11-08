@@ -922,6 +922,17 @@ func TestURIParsing(t *testing.T) {
 			errorContains: "catalog is set both in the URI path and the catalog parameter",
 		},
 		{
+			name:        "trino with encoded slash in schema",
+			trinoURI:    "trino://user:pass@localhost:8080/hive/a%2Fb",
+			expectedDSN: "https://user:pass@localhost:8080?catalog=hive&schema=a%2Fb",
+		},
+		{
+			name:          "trino with empty catalog",
+			trinoURI:      "trino://user:pass@localhost:8080//default",
+			shouldError:   true,
+			errorContains: "expected /catalog or /catalog/schema",
+		},
+		{
 			name:        "trino with upper-case scheme",
 			trinoURI:    "TRINO://user:pass@localhost:8080/hive",
 			expectedDSN: "https://user:pass@localhost:8080?catalog=hive",

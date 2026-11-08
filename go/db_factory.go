@@ -322,16 +322,21 @@ func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string)
 		}
 	}
 
-	if path := strings.Trim(u.Path, "/"); path != "" {
+	// Split the escaped path, so that an escaped "/" stays part of a name.
+	if path := strings.TrimRight(strings.TrimPrefix(u.EscapedPath(), "/"), "/"); path != "" {
 		parts := strings.Split(path, "/")
-		if len(parts) > 2 {
-			return "", fmt.Errorf("invalid path %q in Trino URI: expected /catalog or /catalog/schema", u.Path)
+		if len(parts) > 2 || parts[0] == "" {
+			return "", fmt.Errorf("invalid path %q in Trino URI: expected /catalog or /catalog/schema", u.EscapedPath())
 		}
 		for i, name := range []string{"catalog", "schema"}[:len(parts)] {
 			if queryParams.Has(name) {
 				return "", fmt.Errorf("%s is set both in the URI path and the %s parameter", name, name)
 			}
-			queryParams.Set(name, parts[i])
+			value, err := url.PathUnescape(parts[i])
+			if err != nil {
+				return "", fmt.Errorf("invalid %s in Trino URI: %w", name, err)
+			}
+			queryParams.Set(name, value)
 		}
 	}
 
