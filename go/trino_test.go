@@ -1278,23 +1278,21 @@ func TestIngestTargetCatalogOnly(t *testing.T) {
 			"batch size":      {driverbase.OptionKeyIngestBatchSize: "10"},
 		} {
 			t.Run(name, func(t *testing.T) {
-				defer func() { _ = exec("DROP TABLE IF EXISTS memory.default.ingest_catalog_only") }()
+				defer func() { _ = q.DropTable(cnxn, "memory.default.ingest_catalog_only") }()
 				require.NoError(t, ingest("memory", opts))
 				require.NoError(t, exec("INSERT INTO memory.default.ingest_catalog_only VALUES (2)"))
 			})
 		}
 
-		// A schema with the catalog's name must not be used instead.
+		// For another catalog, a schema with that catalog's name must not be used.
 		require.NoError(t, exec("CREATE SCHEMA memory.ingest_catalog_only_schema"))
 		defer func() { _ = exec("DROP SCHEMA memory.ingest_catalog_only_schema CASCADE") }()
-		require.Error(t, ingest("ingest_catalog_only_schema", nil))
+		var adbcErr adbc.Error
+		require.ErrorAs(t, ingest("ingest_catalog_only_schema", nil), &adbcErr)
+		assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
 		require.Error(t, exec("INSERT INTO memory.ingest_catalog_only_schema.ingest_catalog_only VALUES (2)"))
 
-		// The current schema is only used for the current catalog, and not if it
-		// is information_schema (after setting just the current catalog).
-		var adbcErr adbc.Error
-		require.ErrorAs(t, ingest("tpch", nil), &adbcErr)
-		assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
+		// Nor information_schema, after setting just the current catalog.
 		require.NoError(t, cnxn.(adbc.GetSetOptionsWithContext).SetOption(ctx, adbc.OptionKeyCurrentCatalog, "memory"))
 		require.ErrorAs(t, ingest("memory", nil), &adbcErr)
 		assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)

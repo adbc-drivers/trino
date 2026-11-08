@@ -214,12 +214,15 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwra
 	// setting the current catalog selects.
 	if options.CatalogName != "" && options.SchemaName == "" {
 		var currentCatalog, currentSchema sql.NullString
-		if err := conn.QueryRowContext(ctx, "SELECT current_catalog, current_schema").Scan(&currentCatalog, &currentSchema); err != nil {
+		err := conn.QueryRowContext(ctx, "SELECT current_catalog, current_schema").Scan(&currentCatalog, &currentSchema)
+		if err != nil {
 			return -1, c.ErrorHelper.WrapIO(err, "failed to get current schema")
 		}
-		if !strings.EqualFold(currentCatalog.String, options.CatalogName) || !currentSchema.Valid || currentSchema.String == "information_schema" {
-			return -1, c.ErrorHelper.InvalidArgument("%s requires %s unless it is the current catalog and a current schema is set",
-				adbc.OptionValueIngestTargetCatalog, adbc.OptionValueIngestTargetDBSchema)
+		if !strings.EqualFold(currentCatalog.String, options.CatalogName) ||
+			!currentSchema.Valid ||
+			currentSchema.String == "information_schema" {
+			return -1, c.ErrorHelper.InvalidArgument("%s %q requires %s unless it is the current catalog and a current schema is set",
+				adbc.OptionValueIngestTargetCatalog, options.CatalogName, adbc.OptionValueIngestTargetDBSchema)
 		}
 		withSchema := *options
 		withSchema.SchemaName = currentSchema.String
