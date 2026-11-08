@@ -1227,8 +1227,9 @@ func TestHTTPHeaderOptions(t *testing.T) {
 	}
 }
 
-// Dates and timestamps without a time zone are bound as DATE and TIMESTAMP,
-// so they compare equal to literals of the same value in any session time zone.
+// TestBindDateTimestampSessionTimeZone checks that dates and timestamps without
+// a time zone are bound as DATE and TIMESTAMP, so they compare equal to literals
+// of the same value in any session time zone.
 func TestBindDateTimestampSessionTimeZone(t *testing.T) {
 	withQuirks(t, func(q *TrinoQuirks) {
 		ctx := context.Background()
