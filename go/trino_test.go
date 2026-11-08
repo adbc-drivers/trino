@@ -1282,10 +1282,7 @@ func TestBindDateTimestampSessionTimeZone(t *testing.T) {
 		for _, col := range rec.Columns() {
 			got = append(got, col.ValueStr(0))
 		}
-		assert.Equal(t, "date", got[0])
-		assert.Regexp(t, `^timestamp\(\d+\)$`, got[3])
-		assert.Equal(t, []string{"true", "true", "true", "true", "true"},
-			[]string{got[1], got[2], got[4], got[5], got[6]})
+		assert.Equal(t, []string{"date", "true", "true", "timestamp(0)", "true", "true", "true"}, got)
 		require.False(t, reader.Next())
 		require.NoError(t, reader.Err())
 	})
