@@ -514,6 +514,61 @@ func (s *TrinoTests) TestIngestQueryId() {
 	s.Require().NoError(err)
 }
 
+// TestIngestUnsigned checks that unsigned integer columns are created with a
+// type that holds every value, and ingested.
+func (s *TrinoTests) TestIngestUnsigned() {
+	tableName := "ingest_unsigned"
+	defer func() {
+		_ = s.Quirks.DropTable(s.cnxn, tableName)
+	}()
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "u8", Type: arrow.PrimitiveTypes.Uint8},
+		{Name: "u16", Type: arrow.PrimitiveTypes.Uint16},
+		{Name: "u32", Type: arrow.PrimitiveTypes.Uint32},
+		{Name: "u64", Type: arrow.PrimitiveTypes.Uint64},
+	}, nil)
+	batch := testutil.RecordFromJSON(s.T(), s.Quirks.Alloc(), schema,
+		`[{"u8": 255, "u16": 65535, "u32": 4294967295, "u64": 18446744073709551615}]`)
+	defer batch.Release()
+	s.Require().NoError(s.stmt.Bind(s.ctx, batch))
+	s.Require().NoError(s.stmt.SetOption(s.ctx, adbc.OptionKeyIngestTargetTable, tableName))
+	s.Require().NoError(s.stmt.SetOption(s.ctx, adbc.OptionKeyIngestMode, adbc.OptionValueIngestModeReplace))
+	_, err := s.stmt.ExecuteUpdate(s.ctx)
+	s.Require().NoError(err)
+
+	firstRow := func(query string) []string {
+		s.Require().NoError(s.stmt.SetSqlQuery(s.ctx, query))
+		reader, _, err := s.stmt.ExecuteQuery(s.ctx)
+		s.Require().NoError(err)
+		defer reader.Release()
+		s.Require().True(reader.Next())
+		var row []string
+		for _, col := range reader.RecordBatch().Columns() {
+			row = append(row, col.ValueStr(0))
+		}
+		return row
+	}
+
+	s.Equal([]string{
+		"smallint", "integer", "bigint", "decimal(20,0)",
+		"255", "65535", "4294967295", "18446744073709551615",
+	}, firstRow(`SELECT
+		typeof(u8), typeof(u16), typeof(u32), typeof(u64),
+		CAST(u8 AS VARCHAR), CAST(u16 AS VARCHAR), CAST(u32 AS VARCHAR), CAST(u64 AS VARCHAR)
+		FROM `+tableName))
+
+	// As parameters, uint64 values in the BIGINT range stay integers, so
+	// "? / 2" divides integers; larger ones are decimals.
+	schema = arrow.NewSchema([]arrow.Field{
+		{Name: "small", Type: arrow.PrimitiveTypes.Uint64},
+		{Name: "large", Type: arrow.PrimitiveTypes.Uint64},
+	}, nil)
+	params := testutil.RecordFromJSON(s.T(), s.Quirks.Alloc(), schema, `[{"small": 5, "large": 18446744073709551615}]`)
+	defer params.Release()
+	s.Require().NoError(s.stmt.Bind(s.ctx, params))
+	s.Equal([]string{"2", "18446744073709551615"}, firstRow(`SELECT ? / 2, CAST(? AS VARCHAR)`))
+}
+
 func (s *TrinoTests) TestSelect() {
 	// Drop table if it exists first, then create test table with basic Trino types
 	s.NoError(s.stmt.SetSqlQuery(s.ctx, `DROP TABLE IF EXISTS memory.default.test_types`))
@@ -1225,84 +1280,4 @@ func TestHTTPHeaderOptions(t *testing.T) {
 			assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
 		})
 	}
-}
-
-// TestIngestUnsigned checks that unsigned integer columns are created with a
-// type that holds every value, and ingested.
-func TestIngestUnsigned(t *testing.T) {
-	withQuirks(t, func(q *TrinoQuirks) {
-		ctx := context.Background()
-
-		drv := q.SetupDriver(t)
-		defer q.TearDownDriver(t, drv)
-
-		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, db.Close(ctx))
-		}()
-
-		cnxn, err := db.Open(ctx)
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, cnxn.Close(ctx))
-		}()
-
-		stmt, err := cnxn.NewStatement(ctx)
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, stmt.Close(ctx))
-		}()
-
-		tableName := "ingest_unsigned"
-		schema := arrow.NewSchema([]arrow.Field{
-			{Name: "u8", Type: arrow.PrimitiveTypes.Uint8},
-			{Name: "u16", Type: arrow.PrimitiveTypes.Uint16},
-			{Name: "u32", Type: arrow.PrimitiveTypes.Uint32},
-			{Name: "u64", Type: arrow.PrimitiveTypes.Uint64},
-		}, nil)
-		batch := testutil.RecordFromJSON(t, q.Alloc(), schema,
-			`[{"u8": 255, "u16": 65535, "u32": 4294967295, "u64": 18446744073709551615}]`)
-		defer batch.Release()
-		defer func() {
-			_ = q.DropTable(cnxn, tableName)
-		}()
-		require.NoError(t, stmt.Bind(ctx, batch))
-		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, tableName))
-		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestMode, adbc.OptionValueIngestModeReplace))
-		_, err = stmt.ExecuteUpdate(ctx)
-		require.NoError(t, err)
-
-		firstRow := func(query string) []string {
-			require.NoError(t, stmt.SetSqlQuery(ctx, query))
-			reader, _, err := stmt.ExecuteQuery(ctx)
-			require.NoError(t, err)
-			defer reader.Release()
-			require.True(t, reader.Next())
-			var row []string
-			for _, col := range reader.RecordBatch().Columns() {
-				row = append(row, col.ValueStr(0))
-			}
-			return row
-		}
-
-		assert.Equal(t, []string{
-			"smallint", "integer", "bigint", "decimal(20,0)",
-			"255", "65535", "4294967295", "18446744073709551615",
-		}, firstRow(`SELECT
-			typeof(u8), typeof(u16), typeof(u32), typeof(u64),
-			CAST(u8 AS VARCHAR), CAST(u16 AS VARCHAR), CAST(u32 AS VARCHAR), CAST(u64 AS VARCHAR)
-			FROM `+tableName))
-
-		// As parameters, uint64 values in the BIGINT range stay integers, so
-		// "? / 2" divides integers; larger ones are decimals.
-		schema = arrow.NewSchema([]arrow.Field{
-			{Name: "small", Type: arrow.PrimitiveTypes.Uint64},
-			{Name: "large", Type: arrow.PrimitiveTypes.Uint64},
-		}, nil)
-		params := testutil.RecordFromJSON(t, q.Alloc(), schema, `[{"small": 5, "large": 18446744073709551615}]`)
-		defer params.Release()
-		require.NoError(t, stmt.Bind(ctx, params))
-		assert.Equal(t, []string{"2", "18446744073709551615"}, firstRow(`SELECT ? / 2, CAST(? AS VARCHAR)`))
-	})
 }
