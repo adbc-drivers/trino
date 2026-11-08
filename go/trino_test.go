@@ -1236,18 +1236,15 @@ func TestErrorStatus(t *testing.T) {
 		want adbc.Status
 	}{
 		{"type mismatch", &trinoclient.ErrTrino{
-			ErrorType: "USER_ERROR", ErrorName: "TYPE_MISMATCH", ErrorCode: 58,
+			ErrorType: "USER_ERROR", ErrorName: "TYPE_MISMATCH",
 			Message: "line 1:10: Cannot apply operator: integer + varchar(1)",
 		}, adbc.StatusInvalidArgument},
-		// The ADBC spec asks for ALREADY_EXISTS when appended data does not
-		// match the table.
 		{"insert type mismatch", &trinoclient.ErrTrino{
-			ErrorType: "USER_ERROR", ErrorName: "TYPE_MISMATCH", ErrorCode: 58,
+			ErrorType: "USER_ERROR", ErrorName: "TYPE_MISMATCH",
 			Message: "line 1:1: Insert query has mismatched column types: Table: [varchar], Query: [bigint]",
 		}, adbc.StatusAlreadyExists},
 		{"killed", &trinoclient.ErrTrino{
-			ErrorType: "USER_ERROR", ErrorName: "ADMINISTRATIVELY_KILLED", ErrorCode: 38,
-			Message: "Query killed. Message: test",
+			ErrorType: "USER_ERROR", ErrorName: "ADMINISTRATIVELY_KILLED",
 		}, adbc.StatusCancelled},
 		{"deadline", fmt.Errorf("trino: query failed: %w", context.DeadlineExceeded), adbc.StatusTimeout},
 		{"cancelled", fmt.Errorf("trino: query failed: %w", context.Canceled), adbc.StatusCancelled},
