@@ -20,7 +20,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -174,12 +173,10 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 		tlsConfig.InsecureSkipVerify = true
 	}
 
-	// With SSLVerification=CA, a given certificate is the only trusted root, as
-	// in the Trino Go client: since the host name is not checked, trusting the
-	// system roots as well would accept any public certificate.
-	var caRoots *x509.CertPool
+	var cert []byte
 	if cfg.SSLCert != "" || cfg.SSLCertPath != "" {
-		cert, err := loadSSLCert(cfg)
+		var err error
+		cert, err = loadSSLCert(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load SSL certificate: %v", err)
 		}
@@ -192,15 +189,19 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 			return nil, fmt.Errorf("failed to parse SSL certificate")
 		}
 		tlsConfig.RootCAs = certPool
-		caRoots = x509.NewCertPool()
-		caRoots.AppendCertsFromPEM(cert)
 	}
 
 	verifyCA := cfg.SSLVerification == trino.SSLVerificationCA
 	if verifyCA {
-		// Verify the certificate chain, but not the host name
+		// Verify the certificate chain but not the host name, as the Trino Go
+		// client does. It trusts only the given certificate, if any: with the
+		// system roots too, any public certificate would be accepted.
+		caTLSConfig, err := (&trino.Config{SSLVerification: trino.SSLVerificationCA, SSLCert: string(cert)}).TLSConfig()
+		if err != nil {
+			return nil, err
+		}
 		tlsConfig.InsecureSkipVerify = true
-		tlsConfig.VerifyConnection = verifyCertificateChain(caRoots)
+		tlsConfig.VerifyConnection = caTLSConfig.VerifyConnection
 	}
 
 	clientTLSConfig, err := (&trino.Config{
@@ -224,22 +225,6 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 	}
 
 	return nil, nil
-}
-
-// verifyCertificateChain verifies the server's certificate chain against
-// roots (the system roots if nil), without checking the host name.
-func verifyCertificateChain(roots *x509.CertPool) func(tls.ConnectionState) error {
-	return func(cs tls.ConnectionState) error {
-		if len(cs.PeerCertificates) == 0 {
-			return errors.New("no server certificate presented")
-		}
-		intermediates := x509.NewCertPool()
-		for _, cert := range cs.PeerCertificates[1:] {
-			intermediates.AddCert(cert)
-		}
-		_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates})
-		return err
-	}
 }
 
 func cloneTLSConfig(base *tls.Config) *tls.Config {
