@@ -209,14 +209,16 @@ func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwra
 	params := stmt.(*trinoStatement).GetAdditionalExecParams()
 
 	// A two-part name "catalog"."table" would be read as "schema"."table",
-	// so a catalog without a schema needs the current schema.
+	// so a catalog without a schema needs the current schema. Only use it for
+	// the current catalog, and not if it is just the information_schema that
+	// setting the current catalog selects.
 	if options.CatalogName != "" && options.SchemaName == "" {
-		var currentSchema sql.NullString
-		if err := conn.QueryRowContext(ctx, "SELECT current_schema").Scan(&currentSchema); err != nil {
+		var currentCatalog, currentSchema sql.NullString
+		if err := conn.QueryRowContext(ctx, "SELECT current_catalog, current_schema").Scan(&currentCatalog, &currentSchema); err != nil {
 			return -1, c.ErrorHelper.WrapIO(err, "failed to get current schema")
 		}
-		if !currentSchema.Valid {
-			return -1, c.ErrorHelper.InvalidArgument("%s requires %s when the connection has no current schema",
+		if !strings.EqualFold(currentCatalog.String, options.CatalogName) || !currentSchema.Valid || currentSchema.String == "information_schema" {
+			return -1, c.ErrorHelper.InvalidArgument("%s requires %s unless it is the current catalog and a current schema is set",
 				adbc.OptionValueIngestTargetCatalog, adbc.OptionValueIngestTargetDBSchema)
 		}
 		withSchema := *options

@@ -1289,5 +1289,14 @@ func TestIngestTargetCatalogOnly(t *testing.T) {
 		defer func() { _ = exec("DROP SCHEMA memory.ingest_catalog_only_schema CASCADE") }()
 		require.Error(t, ingest("ingest_catalog_only_schema", nil))
 		require.Error(t, exec("INSERT INTO memory.ingest_catalog_only_schema.ingest_catalog_only VALUES (2)"))
+
+		// The current schema is only used for the current catalog, and not if it
+		// is information_schema (after setting just the current catalog).
+		var adbcErr adbc.Error
+		require.ErrorAs(t, ingest("tpch", nil), &adbcErr)
+		assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
+		require.NoError(t, cnxn.(adbc.GetSetOptionsWithContext).SetOption(ctx, adbc.OptionKeyCurrentCatalog, "memory"))
+		require.ErrorAs(t, ingest("memory", nil), &adbcErr)
+		assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
 	})
 }
