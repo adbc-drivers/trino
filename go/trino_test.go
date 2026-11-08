@@ -1232,38 +1232,18 @@ func TestHTTPHeaderOptions(t *testing.T) {
 func TestProxy(t *testing.T) {
 	ctx := context.Background()
 	srv := newFakeTrinoServer(t)
-	var proxied []string
-	var mu sync.Mutex
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		proxied = append(proxied, r.URL.Path)
-		mu.Unlock()
-		out := r.Clone(r.Context())
-		out.RequestURI = ""
-		resp, err := http.DefaultTransport.RoundTrip(out)
-		if err != nil {
-			w.WriteHeader(http.StatusBadGateway)
-			return
-		}
-		defer func() { _ = resp.Body.Close() }()
-		maps.Copy(w.Header(), resp.Header)
-		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, resp.Body)
-	}))
-	defer proxy.Close()
 
 	stmt := openFakeTrino(t, srv, map[string]string{
-		adbc.OptionKeyURI: srv.URL + "?httpProxy=" + strings.TrimPrefix(proxy.URL, "http://"),
+		// The host does not resolve, so the query only succeeds through the
+		// proxy, which is the fake server itself.
+		adbc.OptionKeyURI: "http://trino.invalid?httpProxy=" + srv.Listener.Addr().String(),
 	})
 	require.NoError(t, stmt.SetSqlQuery(ctx, "SELECT 1"))
 	_, err := stmt.ExecuteUpdate(ctx)
 	require.NoError(t, err)
-	mu.Lock()
-	assert.Contains(t, proxied, "/v1/statement")
-	mu.Unlock()
 
 	// Nothing listens on the SOCKS proxy's address, so connecting fails there.
-	_, err = trino.NewDriver(memory.DefaultAllocator).NewDatabaseWithContext(ctx,
+	_, err = trino.NewDriver(memory.NewCheckedAllocator(memory.DefaultAllocator)).NewDatabaseWithContext(ctx,
 		map[string]string{adbc.OptionKeyURI: srv.URL + "?socksProxy=127.0.0.1:1"})
-	assert.ErrorContains(t, err, "proxyconnect tcp: dial tcp 127.0.0.1:1")
+	require.ErrorContains(t, err, "proxyconnect tcp: dial tcp 127.0.0.1:1")
 }
