@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -283,11 +284,17 @@ func (f *TrinoDBFactory) BuildTrinoDSN(opts map[string]string) (string, error) {
 		return "", fmt.Errorf("missing required option %s", adbc.OptionKeyURI)
 	}
 
-	if strings.HasPrefix(baseURI, "trino://") {
+	if hasPrefixFold(baseURI, "trino://") {
 		return f.parseTrinoURIToDSN(baseURI, username, password)
 	}
 
 	return f.buildDSNFromHTTP(baseURI, username, password)
+}
+
+// hasPrefixFold reports whether s begins with prefix, ignoring case, as URI
+// schemes are case-insensitive.
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
 }
 
 // parseTrinoURIToDSN converts a Trino URI to Trino DSN format using pure URL manipulation.
@@ -305,15 +312,26 @@ func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string)
 	queryParams := u.Query()
 
 	scheme := "https"
-	if strings.EqualFold(queryParams.Get("SSL"), "false") {
-		scheme = "http"
+	if ssl := queryParams.Get("SSL"); ssl != "" {
+		enabled, err := strconv.ParseBool(strings.ToLower(ssl))
+		if err != nil {
+			return "", fmt.Errorf("invalid SSL value %q in Trino URI: expected true or false", ssl)
+		}
+		if !enabled {
+			scheme = "http"
+		}
 	}
 
-	if path := strings.TrimPrefix(u.Path, "/"); path != "" {
-		parts := strings.SplitN(path, "/", 2)
-		queryParams.Set("catalog", parts[0])
-		if len(parts) == 2 && parts[1] != "" {
-			queryParams.Set("schema", parts[1])
+	if path := strings.Trim(u.Path, "/"); path != "" {
+		parts := strings.Split(path, "/")
+		if len(parts) > 2 {
+			return "", fmt.Errorf("invalid path %q in Trino URI: expected /catalog or /catalog/schema", u.Path)
+		}
+		for i, name := range []string{"catalog", "schema"}[:len(parts)] {
+			if queryParams.Has(name) {
+				return "", fmt.Errorf("%s is set both in the URI path and the %s parameter", name, name)
+			}
+			queryParams.Set(name, parts[i])
 		}
 	}
 
@@ -341,7 +359,7 @@ func (f *TrinoDBFactory) ensureHostPort(u *url.URL, scheme string) string {
 
 // buildDSNFromHTTP handles existing HTTP/HTTPS DSNs and plain host strings.
 func (f *TrinoDBFactory) buildDSNFromHTTP(baseURI, username, password string) (string, error) {
-	if !strings.HasPrefix(baseURI, "http://") && !strings.HasPrefix(baseURI, "https://") {
+	if !hasPrefixFold(baseURI, "http://") && !hasPrefixFold(baseURI, "https://") {
 
 		scheme := "https://"
 		if strings.Contains(baseURI, "SSL=false") {
