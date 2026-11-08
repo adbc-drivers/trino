@@ -174,6 +174,10 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 		tlsConfig.InsecureSkipVerify = true
 	}
 
+	// With SSLVerification=CA, a given certificate is the only trusted root, as
+	// in the Trino Go client: since the host name is not checked, trusting the
+	// system roots as well would accept any public certificate.
+	var caRoots *x509.CertPool
 	if cfg.SSLCert != "" || cfg.SSLCertPath != "" {
 		cert, err := loadSSLCert(cfg)
 		if err != nil {
@@ -188,13 +192,15 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 			return nil, fmt.Errorf("failed to parse SSL certificate")
 		}
 		tlsConfig.RootCAs = certPool
+		caRoots = x509.NewCertPool()
+		caRoots.AppendCertsFromPEM(cert)
 	}
 
 	verifyCA := cfg.SSLVerification == trino.SSLVerificationCA
 	if verifyCA {
 		// Verify the certificate chain, but not the host name
 		tlsConfig.InsecureSkipVerify = true
-		tlsConfig.VerifyConnection = verifyCertificateChain(tlsConfig.RootCAs)
+		tlsConfig.VerifyConnection = verifyCertificateChain(caRoots)
 	}
 
 	clientTLSConfig, err := (&trino.Config{

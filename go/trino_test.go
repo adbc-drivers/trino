@@ -1260,5 +1260,9 @@ func TestSSLVerificationCA(t *testing.T) {
 	withCert := "SSLCertPath=" + url.QueryEscape(certPath)
 	assert.ErrorContains(t, connect(withCert+"&SSLVerification=FULL"), "certificate is valid for")
 	assert.NoError(t, connect(withCert+"&SSLVerification=CA"))
-	assert.ErrorContains(t, connect("SSLVerification=CA"), "certificate signed by unknown authority")
+	// Without the certificate, the chain is not trusted (the error wording
+	// depends on the platform's verifier).
+	err := connect("SSLVerification=CA")
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "certificate is valid for")
 }
