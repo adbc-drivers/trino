@@ -16,6 +16,7 @@ package trino
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -206,6 +207,22 @@ var _ sqlwrapper.BulkIngester = (*trinoConnectionImpl)(nil)
 func (c *trinoConnectionImpl) ExecuteBulkIngest(ctx context.Context, stmt sqlwrapper.StatementImpl, conn *sqlwrapper.LoggingConn, options *driverbase.BulkIngestOptions, stream array.RecordReader) (rowCount int64, err error) {
 	// inject the query ID capture through everything
 	params := stmt.(*trinoStatement).GetAdditionalExecParams()
+
+	// A two-part name "catalog"."table" would be read as "schema"."table",
+	// so a catalog without a schema needs the current schema.
+	if options.CatalogName != "" && options.SchemaName == "" {
+		var currentSchema sql.NullString
+		if err := conn.QueryRowContext(ctx, "SELECT current_schema").Scan(&currentSchema); err != nil {
+			return -1, c.ErrorHelper.WrapIO(err, "failed to get current schema")
+		}
+		if !currentSchema.Valid {
+			return -1, c.ErrorHelper.InvalidArgument("%s requires %s when the connection has no current schema",
+				adbc.OptionValueIngestTargetCatalog, adbc.OptionValueIngestTargetDBSchema)
+		}
+		withSchema := *options
+		withSchema.SchemaName = currentSchema.String
+		options = &withSchema
+	}
 
 	schema := stream.Schema()
 	qualifiedTable := qualifiedTableName(options.CatalogName, options.SchemaName, options.TableName)
