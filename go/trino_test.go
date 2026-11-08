@@ -1256,7 +1256,14 @@ func TestSetCurrentCatalogKeepsSchema(t *testing.T) {
 
 		// tpch has no schema "default", so the schema has to be set as well.
 		require.NoError(t, opts.SetOption(ctx, adbc.OptionKeyCurrentCatalog, "tpch"))
+		assert.Equal(t, "tpch.information_schema", current())
 		require.NoError(t, opts.SetOption(ctx, adbc.OptionKeyCurrentDbSchema, "tiny"))
 		assert.Equal(t, "tpch.tiny", current())
+
+		// The same works inside a transaction.
+		require.NoError(t, opts.SetOption(ctx, adbc.OptionKeyAutoCommit, adbc.OptionValueDisabled))
+		require.NoError(t, opts.SetOption(ctx, adbc.OptionKeyCurrentCatalog, "memory"))
+		assert.Equal(t, "memory.information_schema", current())
+		require.NoError(t, cnxn.Rollback(ctx))
 	})
 }

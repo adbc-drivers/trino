@@ -16,6 +16,7 @@ package trino
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -76,13 +77,18 @@ func (c *trinoConnectionImpl) SetCurrentCatalog(ctx context.Context, catalog str
 	}
 	// Trino can only USE a catalog together with a schema. Keep the current
 	// schema if the new catalog has one with that name, otherwise use
-	// information_schema, which every catalog has.
-	if schema, err := c.GetCurrentDbSchema(ctx); err == nil && schema != "" {
-		if _, err := c.Conn.ExecContext(ctx, "USE "+quoteIdentifiers([]string{catalog, schema})); err == nil {
-			return nil
-		}
+	// information_schema, which every catalog has. (A failing USE would abort
+	// an open transaction, so check first.)
+	var schema sql.NullString
+	var exists bool
+	query := fmt.Sprintf("SELECT current_schema, EXISTS (SELECT 1 FROM %s.information_schema.schemata WHERE schema_name = current_schema)", quoteIdentifier(catalog))
+	if err := c.Conn.QueryRowContext(ctx, query).Scan(&schema, &exists); err != nil {
+		return c.ErrorHelper.WrapInvalidArgument(err, "failed to set current catalog to %s", catalog)
 	}
-	_, err := c.Conn.ExecContext(ctx, "USE "+quoteIdentifier(catalog)+".information_schema")
+	if !exists {
+		schema.String = "information_schema"
+	}
+	_, err := c.Conn.ExecContext(ctx, "USE "+quoteIdentifiers([]string{catalog, schema.String}))
 	return c.ErrorHelper.WrapInvalidArgument(err, "failed to set current catalog to %s", catalog)
 }
 
