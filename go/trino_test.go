@@ -1226,3 +1226,53 @@ func TestHTTPHeaderOptions(t *testing.T) {
 		})
 	}
 }
+
+// Dates and timestamps without a time zone are bound as DATE and TIMESTAMP,
+// so they compare equal to literals of the same value in any session time zone.
+func TestBindDateTimestampSessionTimeZone(t *testing.T) {
+	withQuirks(t, func(q *TrinoQuirks) {
+		ctx := context.Background()
+		u, err := url.Parse(q.dsn)
+		require.NoError(t, err)
+		query := u.Query()
+		query.Set("timezone", "America/New_York")
+		u.RawQuery = query.Encode()
+
+		drv := q.SetupDriver(t)
+		defer q.TearDownDriver(t, drv)
+		db, err := drv.NewDatabaseWithContext(ctx, map[string]string{adbc.OptionKeyURI: u.String()})
+		require.NoError(t, err)
+		defer func() { require.NoError(t, db.Close(ctx)) }()
+		cnxn, err := db.Open(ctx)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, cnxn.Close(ctx)) }()
+		stmt, err := cnxn.NewStatement(ctx)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, stmt.Close(ctx)) }()
+
+		schema := arrow.NewSchema([]arrow.Field{
+			{Name: "d1", Type: arrow.FixedWidthTypes.Date32},
+			{Name: "d2", Type: arrow.FixedWidthTypes.Date32},
+			{Name: "ts1", Type: &arrow.TimestampType{Unit: arrow.Microsecond}},
+			{Name: "ts2", Type: &arrow.TimestampType{Unit: arrow.Microsecond}},
+		}, nil)
+		params := testutil.RecordFromJSON(t, q.Alloc(), schema,
+			`[{"d1": "2024-01-15", "d2": "2024-01-15", "ts1": 1705320000000000, "ts2": 1705320000000000}]`)
+		defer params.Release()
+
+		require.NoError(t, stmt.SetSqlQuery(ctx,
+			`SELECT typeof(?), ? = DATE '2024-01-15', typeof(?), ? = TIMESTAMP '2024-01-15 12:00:00'`))
+		require.NoError(t, stmt.Bind(ctx, params))
+		reader, _, err := stmt.ExecuteQuery(ctx)
+		require.NoError(t, err)
+		defer reader.Release()
+		require.True(t, reader.Next())
+		rec := reader.RecordBatch()
+		assert.Equal(t, "date", rec.Column(0).ValueStr(0))
+		assert.Equal(t, "true", rec.Column(1).ValueStr(0))
+		assert.Regexp(t, `^timestamp\(\d+\)$`, rec.Column(2).ValueStr(0))
+		assert.Equal(t, "true", rec.Column(3).ValueStr(0))
+		require.False(t, reader.Next())
+		require.NoError(t, reader.Err())
+	})
+}

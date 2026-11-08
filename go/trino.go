@@ -556,6 +556,23 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		t := a.Value(index).ToTime(timeType.Unit)
 		return trino.Time(t.Hour(), t.Minute(), t.Second(), t.Nanosecond()), nil
 
+	case *array.Date32:
+		// Send a DATE, not a timestamp with time zone, so that comparisons
+		// don't depend on the session time zone
+		return trino.Date(a.Value(index).ToTime().Date()), nil
+
+	case *array.Date64:
+		return trino.Date(a.Value(index).ToTime().Date()), nil
+
+	case *array.Timestamp:
+		timestampType := a.DataType().(*arrow.TimestampType)
+		if timestampType.TimeZone != "" {
+			return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
+		}
+		// Send a TIMESTAMP without time zone, with the same wall-clock time
+		t := a.Value(index).ToTime(timestampType.Unit)
+		return trino.Timestamp(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond()), nil
+
 	case *array.Decimal32:
 		// For Trino driver, convert Decimal32 to trino.Numeric
 		decimalType := a.DataType().(*arrow.Decimal32Type)
