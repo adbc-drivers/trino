@@ -1232,7 +1232,6 @@ func TestHTTPHeaderOptions(t *testing.T) {
 func TestProxy(t *testing.T) {
 	ctx := context.Background()
 	srv := newFakeTrinoServer(t)
-
 	stmt := openFakeTrino(t, srv, map[string]string{
 		// The host does not resolve, so the query only succeeds through the
 		// proxy, which is the fake server itself.
