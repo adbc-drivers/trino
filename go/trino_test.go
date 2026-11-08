@@ -1227,8 +1227,8 @@ func TestHTTPHeaderOptions(t *testing.T) {
 	}
 }
 
-// Setting the current catalog keeps the current schema if the new catalog has
-// a schema with that name.
+// TestSetCurrentCatalogKeepsSchema checks that setting the current catalog keeps
+// the current schema if the new catalog has a schema with that name.
 func TestSetCurrentCatalogKeepsSchema(t *testing.T) {
 	withQuirks(t, func(q *TrinoQuirks) {
 		ctx := context.Background()
