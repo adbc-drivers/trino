@@ -544,6 +544,15 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 	// Handle Trino-specific Arrow to Go conversions
 	// Trino Go client has limited parameter type support, so convert unsupported types to strings
 	switch a := arrowArray.(type) {
+	case *array.Uint8:
+		// For Trino driver, convert Uint8 to uint16 (the Trino Go client takes a uint8 for a byte)
+		return uint16(a.Value(index)), nil
+
+	case *array.Uint64:
+		// For Trino driver, convert Uint64 to a DECIMAL literal ("123."): Trino has no
+		// unsigned types, and values above the BIGINT range are no valid integer literals
+		return trino.Numeric(strconv.FormatUint(a.Value(index), 10) + "."), nil
+
 	case *array.Time32:
 		// For Trino driver, convert Time32 to Trino's Time type (time without timezone)
 		timeType := a.DataType().(*arrow.Time32Type)

@@ -1226,3 +1226,68 @@ func TestHTTPHeaderOptions(t *testing.T) {
 		})
 	}
 }
+
+// TestIngestUnsigned checks that unsigned integer columns are created with a
+// type that holds every value, and ingested.
+func TestIngestUnsigned(t *testing.T) {
+	withQuirks(t, func(q *TrinoQuirks) {
+		ctx := context.Background()
+
+		drv := q.SetupDriver(t)
+		defer q.TearDownDriver(t, drv)
+
+		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, db.Close(ctx))
+		}()
+
+		cnxn, err := db.Open(ctx)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, cnxn.Close(ctx))
+		}()
+
+		stmt, err := cnxn.NewStatement(ctx)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, stmt.Close(ctx))
+		}()
+
+		tableName := "ingest_unsigned"
+		schema := arrow.NewSchema([]arrow.Field{
+			{Name: "u8", Type: arrow.PrimitiveTypes.Uint8},
+			{Name: "u16", Type: arrow.PrimitiveTypes.Uint16},
+			{Name: "u32", Type: arrow.PrimitiveTypes.Uint32},
+			{Name: "u64", Type: arrow.PrimitiveTypes.Uint64},
+		}, nil)
+		batch := testutil.RecordFromJSON(t, q.Alloc(), schema,
+			`[{"u8": 255, "u16": 65535, "u32": 4294967295, "u64": 18446744073709551615}]`)
+		defer batch.Release()
+		defer func() {
+			_ = q.DropTable(cnxn, tableName)
+		}()
+		require.NoError(t, stmt.Bind(ctx, batch))
+		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, tableName))
+		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestMode, adbc.OptionValueIngestModeReplace))
+		_, err = stmt.ExecuteUpdate(ctx)
+		require.NoError(t, err)
+
+		require.NoError(t, stmt.SetSqlQuery(ctx, `SELECT
+			typeof(u8), typeof(u16), typeof(u32), typeof(u64),
+			CAST(u8 AS VARCHAR), CAST(u16 AS VARCHAR), CAST(u32 AS VARCHAR), CAST(u64 AS VARCHAR)
+			FROM `+tableName))
+		reader, _, err := stmt.ExecuteQuery(ctx)
+		require.NoError(t, err)
+		defer reader.Release()
+		require.True(t, reader.Next())
+		var got []string
+		for _, col := range reader.RecordBatch().Columns() {
+			got = append(got, col.ValueStr(0))
+		}
+		assert.Equal(t, []string{
+			"smallint", "integer", "bigint", "decimal(20,0)",
+			"255", "65535", "4294967295", "18446744073709551615",
+		}, got)
+	})
+}
