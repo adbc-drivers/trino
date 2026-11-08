@@ -339,7 +339,7 @@ func (c *trinoConnectionImpl) getParameterPlaceholder(field arrow.Field) string 
 	}
 
 	switch field.Type.(type) {
-	case *arrow.Float32Type:
+	case *arrow.Float16Type, *arrow.Float32Type:
 		return "CAST(? AS REAL)"
 	case *arrow.Float64Type:
 		return "CAST(? AS DOUBLE)"
@@ -480,7 +480,7 @@ func (c *trinoConnectionImpl) arrowToTrinoType(field arrow.Field) (string, error
 		trinoType = "INTEGER"
 	case *arrow.Int64Type:
 		trinoType = "BIGINT"
-	case *arrow.Float32Type:
+	case *arrow.Float16Type, *arrow.Float32Type:
 		trinoType = "REAL"
 	case *arrow.Float64Type:
 		trinoType = "DOUBLE"

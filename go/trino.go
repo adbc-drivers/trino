@@ -581,19 +581,8 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		return convertDecimalToTrinoNumericFromInt(val.BigInt(), decimalType.Scale), nil
 
 	case *array.Float16:
-		// Trino Go client doesn't support float types - convert to string
-		val := a.Value(index)
-		return fmt.Sprintf("%g", val), nil
-
-	case *array.Float32:
-		// Trino Go client doesn't support float types - convert to string
-		val := a.Value(index)
-		return fmt.Sprintf("%g", val), nil
-
-	case *array.Float64:
-		// Trino Go client doesn't support float types - convert to string
-		val := a.Value(index)
-		return fmt.Sprintf("%g", val), nil
+		// For Trino driver, convert Float16 to float32 (the Trino Go client has no 16-bit float)
+		return a.Value(index).Float32(), nil
 
 	case *array.FixedSizeBinary:
 		// Check metadata for UUID extension type indication

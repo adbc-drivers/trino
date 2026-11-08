@@ -1226,3 +1226,87 @@ func TestHTTPHeaderOptions(t *testing.T) {
 		})
 	}
 }
+
+// TestFloatParameters checks that floating point parameters are bound as
+// numbers, and that NaN and infinities can be ingested.
+func TestFloatParameters(t *testing.T) {
+	withQuirks(t, func(q *TrinoQuirks) {
+		ctx := context.Background()
+
+		drv := q.SetupDriver(t)
+		defer q.TearDownDriver(t, drv)
+
+		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, db.Close(ctx))
+		}()
+
+		cnxn, err := db.Open(ctx)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, cnxn.Close(ctx))
+		}()
+
+		stmt, err := cnxn.NewStatement(ctx)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, stmt.Close(ctx))
+		}()
+
+		firstRow := func(query string) []string {
+			require.NoError(t, stmt.SetSqlQuery(ctx, query))
+			reader, _, err := stmt.ExecuteQuery(ctx)
+			require.NoError(t, err)
+			defer reader.Release()
+			require.True(t, reader.Next())
+			var row []string
+			for _, col := range reader.RecordBatch().Columns() {
+				row = append(row, col.ValueStr(0))
+			}
+			return row
+		}
+
+		schema := arrow.NewSchema([]arrow.Field{
+			{Name: "h", Type: arrow.FixedWidthTypes.Float16},
+			{Name: "r", Type: arrow.PrimitiveTypes.Float32},
+			{Name: "d1", Type: arrow.PrimitiveTypes.Float64},
+			{Name: "d2", Type: arrow.PrimitiveTypes.Float64},
+		}, nil)
+		params := testutil.RecordFromJSON(t, q.Alloc(), schema, `[{"h": 1.5, "r": 1.5, "d1": 0.1, "d2": 0.1}]`)
+		defer params.Release()
+		require.NoError(t, stmt.Bind(ctx, params))
+		assert.Equal(t, []string{"true", "true", "double", "true"},
+			firstRow(`SELECT ? = REAL '1.5', ? = REAL '1.5', typeof(?), ? = DOUBLE '0.1'`))
+
+		tableName := "float_parameters"
+		schema = arrow.NewSchema([]arrow.Field{
+			{Name: "h", Type: arrow.FixedWidthTypes.Float16},
+			{Name: "r", Type: arrow.PrimitiveTypes.Float32},
+			{Name: "d", Type: arrow.PrimitiveTypes.Float64},
+		}, nil)
+		batch := testutil.RecordFromJSON(t, q.Alloc(), schema, `[
+			{"h": "NaN", "r": "NaN", "d": "NaN"},
+			{"h": "Inf", "r": "Inf", "d": "Inf"},
+			{"h": "-Inf", "r": "-Inf", "d": "-Inf"},
+			{"h": 1.5, "r": 1.5, "d": 1.5}
+		]`)
+		defer batch.Release()
+		defer func() {
+			_ = q.DropTable(cnxn, tableName)
+		}()
+		require.NoError(t, stmt.Bind(ctx, batch))
+		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, tableName))
+		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestMode, adbc.OptionValueIngestModeReplace))
+		_, err = stmt.ExecuteUpdate(ctx)
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"real", "real", "double", "1", "1", "1", "1"}, firstRow(`SELECT
+			arbitrary(typeof(h)), arbitrary(typeof(r)), arbitrary(typeof(d)),
+			count_if(is_nan(h) AND is_nan(r) AND is_nan(d)),
+			count_if(h = infinity() AND r = infinity() AND d = infinity()),
+			count_if(h = -infinity() AND r = -infinity() AND d = -infinity()),
+			count_if(h = 1.5 AND r = 1.5 AND d = 1.5)
+			FROM `+tableName))
+	})
+}
