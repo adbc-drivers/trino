@@ -74,6 +74,14 @@ func (c *trinoConnectionImpl) SetCurrentCatalog(ctx context.Context, catalog str
 	if catalog == "" {
 		return nil // No-op for empty catalog
 	}
+	// Trino can only USE a catalog together with a schema. Keep the current
+	// schema if the new catalog has one with that name, otherwise use
+	// information_schema, which every catalog has.
+	if schema, err := c.GetCurrentDbSchema(ctx); err == nil && schema != "" {
+		if _, err := c.Conn.ExecContext(ctx, "USE "+quoteIdentifiers([]string{catalog, schema})); err == nil {
+			return nil
+		}
+	}
 	_, err := c.Conn.ExecContext(ctx, "USE "+quoteIdentifier(catalog)+".information_schema")
 	return c.ErrorHelper.WrapInvalidArgument(err, "failed to set current catalog to %s", catalog)
 }
