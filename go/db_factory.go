@@ -194,11 +194,14 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 	verifyCA := cfg.SSLVerification == trino.SSLVerificationCA
 	if verifyCA {
 		// Verify the certificate chain but not the host name, as the Trino Go
-		// client does. It trusts only the given certificate, if any: with the
+		// client does, trusting only the given certificate if any: with the
 		// system roots too, any public certificate would be accepted.
-		caTLSConfig, err := (&trino.Config{SSLVerification: trino.SSLVerificationCA, SSLCert: string(cert)}).TLSConfig()
+		caTLSConfig, err := (&trino.Config{
+			SSLVerification: trino.SSLVerificationCA,
+			SSLCert:         string(cert),
+		}).TLSConfig()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to configure SSL verification: %w", err)
 		}
 		tlsConfig.InsecureSkipVerify = true
 		tlsConfig.VerifyConnection = caTLSConfig.VerifyConnection
