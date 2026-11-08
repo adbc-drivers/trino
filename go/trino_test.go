@@ -38,6 +38,7 @@ import (
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1275,13 +1276,27 @@ func TestFloatParameters(t *testing.T) {
 		reader.Release()
 		assert.Equal(t, []string{"true", "true", "double", "true"}, got)
 
-		bldr := array.NewFloat64Builder(q.Alloc())
-		defer bldr.Release()
-		bldr.AppendValues([]float64{math.NaN(), math.Inf(1), math.Inf(-1)}, nil)
-		values := bldr.NewArray()
-		defer values.Release()
-		batch := array.NewRecordBatch(arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Float64}}, nil),
-			[]arrow.Array{values}, 3)
+		floats := []float64{math.NaN(), math.Inf(1), math.Inf(-1), 1.5}
+		halfs := array.NewFloat16Builder(q.Alloc())
+		defer halfs.Release()
+		reals := array.NewFloat32Builder(q.Alloc())
+		defer reals.Release()
+		doubles := array.NewFloat64Builder(q.Alloc())
+		defer doubles.Release()
+		for _, f := range floats {
+			halfs.Append(float16.New(float32(f)))
+			reals.Append(float32(f))
+			doubles.Append(f)
+		}
+		columns := []arrow.Array{halfs.NewArray(), reals.NewArray(), doubles.NewArray()}
+		for _, col := range columns {
+			defer col.Release()
+		}
+		batch := array.NewRecordBatch(arrow.NewSchema([]arrow.Field{
+			{Name: "h", Type: arrow.FixedWidthTypes.Float16},
+			{Name: "r", Type: arrow.PrimitiveTypes.Float32},
+			{Name: "d", Type: arrow.PrimitiveTypes.Float64},
+		}, nil), columns, int64(len(floats)))
 		defer batch.Release()
 		defer func() { _ = q.DropTable(cnxn, "memory.default.float_parameters") }()
 		require.NoError(t, stmt.Bind(ctx, batch))
@@ -1289,7 +1304,12 @@ func TestFloatParameters(t *testing.T) {
 		_, err = stmt.ExecuteUpdate(ctx)
 		require.NoError(t, err)
 
-		require.NoError(t, stmt.SetSqlQuery(ctx, `SELECT count_if(is_nan(x)), count_if(x = infinity()), count_if(x = -infinity())
+		require.NoError(t, stmt.SetSqlQuery(ctx, `SELECT
+			arbitrary(typeof(h)), arbitrary(typeof(r)), arbitrary(typeof(d)),
+			count_if(is_nan(h) AND is_nan(r) AND is_nan(d)),
+			count_if(h = infinity() AND r = infinity() AND d = infinity()),
+			count_if(h = -infinity() AND r = -infinity() AND d = -infinity()),
+			count_if(h = 1.5 AND r = 1.5 AND d = 1.5)
 			FROM memory.default.float_parameters`))
 		reader, _, err = stmt.ExecuteQuery(ctx)
 		require.NoError(t, err)
@@ -1299,6 +1319,6 @@ func TestFloatParameters(t *testing.T) {
 		for _, col := range reader.RecordBatch().Columns() {
 			got = append(got, col.ValueStr(0))
 		}
-		assert.Equal(t, []string{"1", "1", "1"}, got)
+		assert.Equal(t, []string{"real", "real", "double", "1", "1", "1", "1"}, got)
 	})
 }
