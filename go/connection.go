@@ -480,6 +480,15 @@ func (c *trinoConnectionImpl) arrowToTrinoType(field arrow.Field) (string, error
 		trinoType = "INTEGER"
 	case *arrow.Int64Type:
 		trinoType = "BIGINT"
+	case *arrow.Uint8Type:
+		trinoType = "SMALLINT"
+	case *arrow.Uint16Type:
+		trinoType = "INTEGER"
+	case *arrow.Uint32Type:
+		trinoType = "BIGINT"
+	case *arrow.Uint64Type:
+		// Trino has no unsigned types; DECIMAL(20,0) holds every uint64
+		trinoType = "DECIMAL(20,0)"
 	case *arrow.Float32Type:
 		trinoType = "REAL"
 	case *arrow.Float64Type:

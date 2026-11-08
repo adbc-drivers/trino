@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"regexp"
@@ -544,6 +545,20 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 	// Handle Trino-specific Arrow to Go conversions
 	// Trino Go client has limited parameter type support, so convert unsupported types to strings
 	switch a := arrowArray.(type) {
+	case *array.Uint8:
+		// For Trino driver, convert Uint8 to uint16 (the Trino Go client takes a uint8 for a byte)
+		return uint16(a.Value(index)), nil
+
+	case *array.Uint64:
+		// For Trino driver, convert Uint64 to int64, or above the BIGINT range to a
+		// DECIMAL literal ("123."), since Trino has no unsigned types and such values
+		// are not valid BIGINT literals
+		v := a.Value(index)
+		if v <= math.MaxInt64 {
+			return int64(v), nil
+		}
+		return trino.Numeric(strconv.FormatUint(v, 10) + "."), nil
+
 	case *array.Time32:
 		// For Trino driver, convert Time32 to Trino's Time type (time without timezone)
 		timeType := a.DataType().(*arrow.Time32Type)
