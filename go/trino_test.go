@@ -1232,14 +1232,22 @@ func TestHTTPHeaderOptions(t *testing.T) {
 func TestSetCurrentCatalogKeepsSchema(t *testing.T) {
 	withQuirks(t, func(q *TrinoQuirks) {
 		ctx := context.Background()
+
 		drv := q.SetupDriver(t)
 		defer q.TearDownDriver(t, drv)
+
 		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
 		require.NoError(t, err)
-		defer func() { require.NoError(t, db.Close(ctx)) }()
+		defer func() {
+			require.NoError(t, db.Close(ctx))
+		}()
+
 		cnxn, err := db.Open(ctx)
 		require.NoError(t, err)
-		defer func() { require.NoError(t, cnxn.Close(ctx)) }()
+		defer func() {
+			require.NoError(t, cnxn.Close(ctx))
+		}()
+
 		opts := cnxn.(adbc.GetSetOptionsWithContext)
 
 		current := func() string {
