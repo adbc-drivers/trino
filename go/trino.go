@@ -581,7 +581,7 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 		return convertDecimalToTrinoNumericFromInt(val.BigInt(), decimalType.Scale), nil
 
 	case *array.Float16:
-		// The Trino Go client has no 16-bit float, so send a float32
+		// For Trino driver, convert Float16 to float32 (the Trino Go client has no 16-bit float)
 		return a.Value(index).Float32(), nil
 
 	case *array.FixedSizeBinary:

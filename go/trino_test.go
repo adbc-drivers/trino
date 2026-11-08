@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -38,7 +37,6 @@ import (
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1256,6 +1254,19 @@ func TestFloatParameters(t *testing.T) {
 			require.NoError(t, stmt.Close(ctx))
 		}()
 
+		firstRow := func(query string) []string {
+			require.NoError(t, stmt.SetSqlQuery(ctx, query))
+			reader, _, err := stmt.ExecuteQuery(ctx)
+			require.NoError(t, err)
+			defer reader.Release()
+			require.True(t, reader.Next())
+			var row []string
+			for _, col := range reader.RecordBatch().Columns() {
+				row = append(row, col.ValueStr(0))
+			}
+			return row
+		}
+
 		schema := arrow.NewSchema([]arrow.Field{
 			{Name: "h", Type: arrow.FixedWidthTypes.Float16},
 			{Name: "r", Type: arrow.PrimitiveTypes.Float32},
@@ -1264,61 +1275,38 @@ func TestFloatParameters(t *testing.T) {
 		}, nil)
 		params := testutil.RecordFromJSON(t, q.Alloc(), schema, `[{"h": 1.5, "r": 1.5, "d1": 0.1, "d2": 0.1}]`)
 		defer params.Release()
-		require.NoError(t, stmt.SetSqlQuery(ctx, `SELECT ? = REAL '1.5', ? = REAL '1.5', typeof(?), ? = DOUBLE '0.1'`))
 		require.NoError(t, stmt.Bind(ctx, params))
-		reader, _, err := stmt.ExecuteQuery(ctx)
-		require.NoError(t, err)
-		require.True(t, reader.Next())
-		var got []string
-		for _, col := range reader.RecordBatch().Columns() {
-			got = append(got, col.ValueStr(0))
-		}
-		reader.Release()
-		assert.Equal(t, []string{"true", "true", "double", "true"}, got)
+		assert.Equal(t, []string{"true", "true", "double", "true"},
+			firstRow(`SELECT ? = REAL '1.5', ? = REAL '1.5', typeof(?), ? = DOUBLE '0.1'`))
 
-		floats := []float64{math.NaN(), math.Inf(1), math.Inf(-1), 1.5}
-		halfs := array.NewFloat16Builder(q.Alloc())
-		defer halfs.Release()
-		reals := array.NewFloat32Builder(q.Alloc())
-		defer reals.Release()
-		doubles := array.NewFloat64Builder(q.Alloc())
-		defer doubles.Release()
-		for _, f := range floats {
-			halfs.Append(float16.New(float32(f)))
-			reals.Append(float32(f))
-			doubles.Append(f)
-		}
-		columns := []arrow.Array{halfs.NewArray(), reals.NewArray(), doubles.NewArray()}
-		for _, col := range columns {
-			defer col.Release()
-		}
-		batch := array.NewRecordBatch(arrow.NewSchema([]arrow.Field{
+		tableName := "float_parameters"
+		schema = arrow.NewSchema([]arrow.Field{
 			{Name: "h", Type: arrow.FixedWidthTypes.Float16},
 			{Name: "r", Type: arrow.PrimitiveTypes.Float32},
 			{Name: "d", Type: arrow.PrimitiveTypes.Float64},
-		}, nil), columns, int64(len(floats)))
+		}, nil)
+		batch := testutil.RecordFromJSON(t, q.Alloc(), schema, `[
+			{"h": "NaN", "r": "NaN", "d": "NaN"},
+			{"h": "Inf", "r": "Inf", "d": "Inf"},
+			{"h": "-Inf", "r": "-Inf", "d": "-Inf"},
+			{"h": 1.5, "r": 1.5, "d": 1.5}
+		]`)
 		defer batch.Release()
-		defer func() { _ = q.DropTable(cnxn, "memory.default.float_parameters") }()
+		defer func() {
+			_ = q.DropTable(cnxn, tableName)
+		}()
 		require.NoError(t, stmt.Bind(ctx, batch))
-		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, "float_parameters"))
+		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, tableName))
+		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestMode, adbc.OptionValueIngestModeReplace))
 		_, err = stmt.ExecuteUpdate(ctx)
 		require.NoError(t, err)
 
-		require.NoError(t, stmt.SetSqlQuery(ctx, `SELECT
+		assert.Equal(t, []string{"real", "real", "double", "1", "1", "1", "1"}, firstRow(`SELECT
 			arbitrary(typeof(h)), arbitrary(typeof(r)), arbitrary(typeof(d)),
 			count_if(is_nan(h) AND is_nan(r) AND is_nan(d)),
 			count_if(h = infinity() AND r = infinity() AND d = infinity()),
 			count_if(h = -infinity() AND r = -infinity() AND d = -infinity()),
 			count_if(h = 1.5 AND r = 1.5 AND d = 1.5)
-			FROM memory.default.float_parameters`))
-		reader, _, err = stmt.ExecuteQuery(ctx)
-		require.NoError(t, err)
-		defer reader.Release()
-		require.True(t, reader.Next())
-		got = nil
-		for _, col := range reader.RecordBatch().Columns() {
-			got = append(got, col.ValueStr(0))
-		}
-		assert.Equal(t, []string{"real", "real", "double", "1", "1", "1", "1"}, got)
+			FROM `+tableName))
 	})
 }
