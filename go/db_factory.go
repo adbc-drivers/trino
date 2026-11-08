@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -95,8 +96,8 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 	}
 
 	var httpClientName strings.Builder
-	fmt.Fprintf(&httpClientName, "timeout=%s|skip_verification=%t|ssl_cert_path=%s|ssl_cert=%s",
-		timeout, skipVerification, cfg.SSLCertPath, cfg.SSLCert)
+	fmt.Fprintf(&httpClientName, "timeout=%s|ssl_verification=%s|ssl_cert_path=%s|ssl_cert=%s",
+		timeout, cfg.SSLVerification, cfg.SSLCertPath, cfg.SSLCert)
 	if tlsConfig != nil {
 		for _, cert := range tlsConfig.Certificates {
 			for _, der := range cert.Certificate {
@@ -189,6 +190,13 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 		tlsConfig.RootCAs = certPool
 	}
 
+	verifyCA := cfg.SSLVerification == trino.SSLVerificationCA
+	if verifyCA {
+		// Verify the certificate chain, but not the host name
+		tlsConfig.InsecureSkipVerify = true
+		tlsConfig.VerifyConnection = verifyCertificateChain(tlsConfig.RootCAs)
+	}
+
 	clientTLSConfig, err := (&trino.Config{
 		SSLClientCertPath: cfg.SSLClientCertPath,
 		SSLClientCert:     cfg.SSLClientCert,
@@ -205,11 +213,27 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 		tlsConfig.Certificates = clientTLSConfig.Certificates
 	}
 
-	if skipVerification || cfg.SSLCert != "" || cfg.SSLCertPath != "" || clientTLSConfig != nil {
+	if skipVerification || verifyCA || cfg.SSLCert != "" || cfg.SSLCertPath != "" || clientTLSConfig != nil {
 		return tlsConfig, nil
 	}
 
 	return nil, nil
+}
+
+// verifyCertificateChain verifies the server's certificate chain against
+// roots (the system roots if nil), without checking the host name.
+func verifyCertificateChain(roots *x509.CertPool) func(tls.ConnectionState) error {
+	return func(cs tls.ConnectionState) error {
+		if len(cs.PeerCertificates) == 0 {
+			return errors.New("no server certificate presented")
+		}
+		intermediates := x509.NewCertPool()
+		for _, cert := range cs.PeerCertificates[1:] {
+			intermediates.AddCert(cert)
+		}
+		_, err := cs.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates})
+		return err
+	}
 }
 
 func cloneTLSConfig(base *tls.Config) *tls.Config {

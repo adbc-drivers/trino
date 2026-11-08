@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -1225,4 +1227,38 @@ func TestHTTPHeaderOptions(t *testing.T) {
 			assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
 		})
 	}
+}
+
+// TestSSLVerificationCA checks that SSLVerification=CA verifies the server's
+// certificate chain but not its host name.
+func TestSSLVerificationCA(t *testing.T) {
+	ctx := context.Background()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"starting": false}`)
+	}))
+	defer srv.Close()
+	certPath := filepath.Join(t.TempDir(), "ca.crt")
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	require.NoError(t, os.WriteFile(certPath, certPEM, 0o600))
+	// The certificate is for 127.0.0.1 and example.com, not localhost.
+	uri := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
+
+	connect := func(params string) error {
+		db, err := trino.NewDriver(memory.DefaultAllocator).NewDatabaseWithContext(ctx,
+			map[string]string{adbc.OptionKeyURI: uri + "?" + params})
+		if err != nil {
+			return err
+		}
+		defer func() { require.NoError(t, db.Close(ctx)) }()
+		cnxn, err := db.Open(ctx)
+		if err != nil {
+			return err
+		}
+		return cnxn.Close(ctx)
+	}
+	withCert := "SSLCertPath=" + url.QueryEscape(certPath)
+	assert.ErrorContains(t, connect(withCert+"&SSLVerification=FULL"), "certificate is valid for")
+	assert.NoError(t, connect(withCert+"&SSLVerification=CA"))
+	assert.ErrorContains(t, connect("SSLVerification=CA"), "certificate signed by unknown authority")
 }
