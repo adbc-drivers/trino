@@ -15,7 +15,9 @@
 package trino
 
 import (
+	"context"
 	"errors"
+	"strings"
 
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/trinodb/trino-go-client/trino"
@@ -29,6 +31,13 @@ func (t TrinoErrorInspector) InspectError(err error, defaultStatus adbc.Status) 
 	status := defaultStatus
 	var vendorCode int32
 	var sqlState [5]byte
+
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		status = adbc.StatusTimeout
+	case errors.Is(err, context.Canceled):
+		status = adbc.StatusCancelled
+	}
 
 	if trinoErr, ok := errors.AsType[*trino.ErrTrino](err); ok {
 		vendorCode = int32(trinoErr.ErrorCode)
@@ -45,8 +54,16 @@ func (t TrinoErrorInspector) InspectError(err error, defaultStatus adbc.Status) 
 				status = adbc.StatusInvalidArgument
 			case "NOT_FOUND", "CATALOG_NOT_FOUND", "COLUMN_NOT_FOUND", "TABLE_NOT_FOUND", "SCHEMA_NOT_FOUND", "FUNCTION_NOT_FOUND":
 				status = adbc.StatusNotFound
-			case "ALREADY_EXISTS", "TABLE_ALREADY_EXISTS", "TYPE_MISMATCH":
+			case "ALREADY_EXISTS", "TABLE_ALREADY_EXISTS":
 				status = adbc.StatusAlreadyExists
+			case "TYPE_MISMATCH":
+				// The ADBC spec asks for ALREADY_EXISTS when ingested data
+				// does not match the existing table
+				if strings.Contains(trinoErr.Message, "Insert query has mismatched column types") {
+					status = adbc.StatusAlreadyExists
+				} else {
+					status = adbc.StatusInvalidArgument
+				}
 			case "PERMISSION_DENIED":
 				status = adbc.StatusUnauthorized
 			case "NOT_SUPPORTED":
@@ -57,7 +74,7 @@ func (t TrinoErrorInspector) InspectError(err error, defaultStatus adbc.Status) 
 				status = adbc.StatusInvalidData
 			case "CONSTRAINT_VIOLATION":
 				status = adbc.StatusIntegrity
-			case "USER_CANCELED":
+			case "USER_CANCELED", "ADMINISTRATIVELY_KILLED":
 				status = adbc.StatusCancelled
 			case "ABANDONED_QUERY":
 				status = adbc.StatusTimeout
