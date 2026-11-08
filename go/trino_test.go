@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1225,4 +1226,79 @@ func TestHTTPHeaderOptions(t *testing.T) {
 			assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
 		})
 	}
+}
+
+// TestFloatParameters checks that floating point parameters are bound as
+// numbers, and that NaN and infinities can be ingested.
+func TestFloatParameters(t *testing.T) {
+	withQuirks(t, func(q *TrinoQuirks) {
+		ctx := context.Background()
+
+		drv := q.SetupDriver(t)
+		defer q.TearDownDriver(t, drv)
+
+		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, db.Close(ctx))
+		}()
+
+		cnxn, err := db.Open(ctx)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, cnxn.Close(ctx))
+		}()
+
+		stmt, err := cnxn.NewStatement(ctx)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, stmt.Close(ctx))
+		}()
+
+		schema := arrow.NewSchema([]arrow.Field{
+			{Name: "h", Type: arrow.FixedWidthTypes.Float16},
+			{Name: "r", Type: arrow.PrimitiveTypes.Float32},
+			{Name: "d1", Type: arrow.PrimitiveTypes.Float64},
+			{Name: "d2", Type: arrow.PrimitiveTypes.Float64},
+		}, nil)
+		params := testutil.RecordFromJSON(t, q.Alloc(), schema, `[{"h": 1.5, "r": 1.5, "d1": 0.1, "d2": 0.1}]`)
+		defer params.Release()
+		require.NoError(t, stmt.SetSqlQuery(ctx, `SELECT ? = REAL '1.5', ? = REAL '1.5', typeof(?), ? = DOUBLE '0.1'`))
+		require.NoError(t, stmt.Bind(ctx, params))
+		reader, _, err := stmt.ExecuteQuery(ctx)
+		require.NoError(t, err)
+		require.True(t, reader.Next())
+		var got []string
+		for _, col := range reader.RecordBatch().Columns() {
+			got = append(got, col.ValueStr(0))
+		}
+		reader.Release()
+		assert.Equal(t, []string{"true", "true", "double", "true"}, got)
+
+		bldr := array.NewFloat64Builder(q.Alloc())
+		defer bldr.Release()
+		bldr.AppendValues([]float64{math.NaN(), math.Inf(1), math.Inf(-1)}, nil)
+		values := bldr.NewArray()
+		defer values.Release()
+		batch := array.NewRecordBatch(arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Float64}}, nil),
+			[]arrow.Array{values}, 3)
+		defer batch.Release()
+		defer func() { _ = q.DropTable(cnxn, "memory.default.float_parameters") }()
+		require.NoError(t, stmt.Bind(ctx, batch))
+		require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, "float_parameters"))
+		_, err = stmt.ExecuteUpdate(ctx)
+		require.NoError(t, err)
+
+		require.NoError(t, stmt.SetSqlQuery(ctx, `SELECT count_if(is_nan(x)), count_if(x = infinity()), count_if(x = -infinity())
+			FROM memory.default.float_parameters`))
+		reader, _, err = stmt.ExecuteQuery(ctx)
+		require.NoError(t, err)
+		defer reader.Release()
+		require.True(t, reader.Next())
+		got = nil
+		for _, col := range reader.RecordBatch().Columns() {
+			got = append(got, col.ValueStr(0))
+		}
+		assert.Equal(t, []string{"1", "1", "1"}, got)
+	})
 }
