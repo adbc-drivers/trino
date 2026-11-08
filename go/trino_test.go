@@ -1227,8 +1227,9 @@ func TestHTTPHeaderOptions(t *testing.T) {
 	}
 }
 
-// GetObjects lists the schemas, tables and columns of every catalog, not just
-// the session catalog, and works when the connection has no catalog.
+// TestGetObjectsOtherCatalog checks that GetObjects lists the schemas, tables
+// and columns of any catalog, not just the session catalog, and works when the
+// connection has no catalog.
 func TestGetObjectsOtherCatalog(t *testing.T) {
 	withQuirks(t, func(q *TrinoQuirks) {
 		ctx := context.Background()
