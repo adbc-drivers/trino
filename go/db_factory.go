@@ -94,9 +94,25 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 		transport.TLSClientConfig = tlsConfig
 	}
 
+	// The custom HTTP client also has to own the proxy. If both proxies are
+	// set, leave them for the Trino Go client to reject.
+	var proxy *url.URL
+	switch {
+	case cfg.HTTPProxy != "" && cfg.SOCKSProxy != "":
+	case cfg.HTTPProxy != "":
+		proxy = &url.URL{Scheme: "http", Host: cfg.HTTPProxy}
+	case cfg.SOCKSProxy != "":
+		proxy = &url.URL{Scheme: "socks5", Host: cfg.SOCKSProxy}
+	}
+	if proxy != nil {
+		transport.Proxy = http.ProxyURL(proxy)
+		cfg.HTTPProxy = ""
+		cfg.SOCKSProxy = ""
+	}
+
 	var httpClientName strings.Builder
-	fmt.Fprintf(&httpClientName, "timeout=%s|skip_verification=%t|ssl_cert_path=%s|ssl_cert=%s",
-		timeout, skipVerification, cfg.SSLCertPath, cfg.SSLCert)
+	fmt.Fprintf(&httpClientName, "timeout=%s|skip_verification=%t|ssl_cert_path=%s|ssl_cert=%s|proxy=%s",
+		timeout, skipVerification, cfg.SSLCertPath, cfg.SSLCert, proxy)
 	if tlsConfig != nil {
 		for _, cert := range tlsConfig.Certificates {
 			for _, der := range cert.Certificate {
