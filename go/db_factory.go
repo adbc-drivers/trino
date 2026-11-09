@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/adbc-drivers/driverbase-go/driverbase"
 	"github.com/adbc-drivers/driverbase-go/sqlwrapper"
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/trinodb/trino-go-client/trino"
@@ -104,9 +105,9 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 			}
 		}
 	}
-	serverURL, err := url.Parse(cfg.ServerURI)
+	serverURL, err := driverbase.SafeParseURL(cfg.ServerURI)
 	if err != nil {
-		return "", fmt.Errorf("could not parse Trino server URI: invalid URI format")
+		return "", fmt.Errorf("could not parse Trino server URI: %w", err)
 	}
 	rt := &headerTransport{
 		base:    transport,
@@ -297,9 +298,9 @@ func (f *TrinoDBFactory) BuildTrinoDSN(opts map[string]string) (string, error) {
 //	trino://user:pass@host:8080/postgresql/public → http://user:pass@host:8080?catalog=postgresql&schema=public
 //	trino://user@host/memory/default?SSL=true → https://user@host:443?catalog=memory&schema=default&SSL=true
 func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string) (string, error) {
-	u, err := url.Parse(trinoURI)
+	u, err := driverbase.SafeParseURL(trinoURI)
 	if err != nil {
-		return "", fmt.Errorf("invalid Trino URI format")
+		return "", fmt.Errorf("invalid Trino URI format: %w", err)
 	}
 
 	queryParams := u.Query()
@@ -350,9 +351,9 @@ func (f *TrinoDBFactory) buildDSNFromHTTP(baseURI, username, password string) (s
 		baseURI = scheme + baseURI
 	}
 
-	u, err := url.Parse(baseURI)
+	u, err := driverbase.SafeParseURL(baseURI)
 	if err != nil {
-		return "", fmt.Errorf("invalid DSN format")
+		return "", fmt.Errorf("invalid DSN format: %w", err)
 	}
 
 	u.User = f.applyCredentialOverrides(u.User, username, password)

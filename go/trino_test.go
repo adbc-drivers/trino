@@ -778,6 +778,11 @@ func TestInvalidURIDoesNotExposeSecrets(t *testing.T) {
 					diagnostic = "invalid Trino URI format"
 				}
 				assert.Contains(t, err.Error(), diagnostic)
+				if tc.name == "escape" {
+					assert.Contains(t, err.Error(), "failed to parse URL: invalid URL escape")
+				} else {
+					assert.Contains(t, err.Error(), "failed to parse URL: invalid port")
+				}
 				assert.NotContains(t, err.Error(), password)
 				assert.NotContains(t, err.Error(), token)
 				assert.NotContains(t, err.Error(), uri)
