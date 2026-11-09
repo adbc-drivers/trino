@@ -753,15 +753,19 @@ func TestInvalidURIDoesNotExposeSecrets(t *testing.T) {
 	const token = "uri-token-sentinel"
 	for _, scheme := range []string{"trino", "http", "https"} {
 		for _, tc := range []struct {
-			name       string
-			address    string
-			diagnostic string
+			name    string
+			address string
 		}{
-			{"escape", "localhost/%zz", "invalid URL escape"},
-			{"port", "localhost:invalid/catalog", "invalid port"},
+			{"escape", "localhost/%zz"},
+			{"port", "localhost:invalid/catalog"},
+			{"missing userinfo separator and host", "/catalog"},
 		} {
 			t.Run(scheme+"/"+tc.name, func(t *testing.T) {
-				uri := scheme + "://user:" + password + "@" + tc.address + "?token=" + token
+				authoritySeparator := "@"
+				if tc.name == "missing userinfo separator and host" {
+					authoritySeparator = ""
+				}
+				uri := scheme + "://user:" + password + authoritySeparator + tc.address + "?token=" + token
 				mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
 				t.Cleanup(func() { mem.AssertSize(t, 0) })
 				db, err := trino.NewDriver(mem).NewDatabaseWithContext(context.Background(), map[string]string{adbc.OptionKeyURI: uri})
@@ -769,7 +773,11 @@ func TestInvalidURIDoesNotExposeSecrets(t *testing.T) {
 					t.Cleanup(func() { require.NoError(t, db.Close(context.Background())) })
 				}
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.diagnostic)
+				diagnostic := "invalid DSN format"
+				if scheme == "trino" {
+					diagnostic = "invalid Trino URI format"
+				}
+				assert.Contains(t, err.Error(), diagnostic)
 				assert.NotContains(t, err.Error(), password)
 				assert.NotContains(t, err.Error(), token)
 				assert.NotContains(t, err.Error(), uri)

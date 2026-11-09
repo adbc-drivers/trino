@@ -20,7 +20,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -107,7 +106,7 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 	}
 	serverURL, err := url.Parse(cfg.ServerURI)
 	if err != nil {
-		return "", fmt.Errorf("could not parse Trino server URI: %w", urlErrorCause(err))
+		return "", fmt.Errorf("could not parse Trino server URI: invalid URI format")
 	}
 	rt := &headerTransport{
 		base:    transport,
@@ -300,7 +299,7 @@ func (f *TrinoDBFactory) BuildTrinoDSN(opts map[string]string) (string, error) {
 func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string) (string, error) {
 	u, err := url.Parse(trinoURI)
 	if err != nil {
-		return "", fmt.Errorf("invalid Trino URI format: %v", urlErrorCause(err))
+		return "", fmt.Errorf("invalid Trino URI format")
 	}
 
 	queryParams := u.Query()
@@ -353,20 +352,12 @@ func (f *TrinoDBFactory) buildDSNFromHTTP(baseURI, username, password string) (s
 
 	u, err := url.Parse(baseURI)
 	if err != nil {
-		return "", fmt.Errorf("invalid DSN format: %v", urlErrorCause(err))
+		return "", fmt.Errorf("invalid DSN format")
 	}
 
 	u.User = f.applyCredentialOverrides(u.User, username, password)
 
 	return u.String(), nil
-}
-
-// urlErrorCause excludes the input URL, which may contain credentials.
-func urlErrorCause(err error) error {
-	if urlErr, ok := errors.AsType[*url.Error](err); ok {
-		return urlErr.Err
-	}
-	return err
 }
 
 // applyCredentialOverrides contains username and password override logic
