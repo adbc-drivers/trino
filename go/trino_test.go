@@ -748,6 +748,46 @@ func TestTrinoIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(TrinoTestSuite))
 }
 
+func TestInvalidURIDoesNotExposeSecrets(t *testing.T) {
+	const password = "uri-password-sentinel"
+	const token = "uri-token-sentinel"
+	for _, scheme := range []struct{ name, diagnostic string }{
+		{"trino", "invalid Trino URI format"},
+		{"http", "invalid DSN format"},
+		{"https", "invalid DSN format"},
+	} {
+		for _, tc := range []struct {
+			name       string
+			address    string
+			diagnostic string
+		}{
+			{"escape", "localhost/%zz", "failed to parse URL: invalid URL escape"},
+			{"port", "localhost:invalid/catalog", "failed to parse URL: invalid port"},
+			{"missing userinfo separator and host", "/catalog", "failed to parse URL: invalid port"},
+		} {
+			t.Run(scheme.name+"/"+tc.name, func(t *testing.T) {
+				authoritySeparator := "@"
+				if tc.name == "missing userinfo separator and host" {
+					authoritySeparator = ""
+				}
+				uri := scheme.name + "://user:" + password + authoritySeparator + tc.address + "?token=" + token
+				mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
+				t.Cleanup(func() { mem.AssertSize(t, 0) })
+				db, err := trino.NewDriver(mem).NewDatabaseWithContext(context.Background(), map[string]string{adbc.OptionKeyURI: uri})
+				if db != nil {
+					t.Cleanup(func() { require.NoError(t, db.Close(context.Background())) })
+				}
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), scheme.diagnostic)
+				assert.Contains(t, err.Error(), tc.diagnostic)
+				assert.NotContains(t, err.Error(), password)
+				assert.NotContains(t, err.Error(), token)
+				assert.NotContains(t, err.Error(), uri)
+			})
+		}
+	}
+}
+
 // TestURIParsing tests the parseTrinoURIToDSN function with various URI formats
 func TestURIParsing(t *testing.T) {
 	factory := trino.NewTrinoDBFactory()
