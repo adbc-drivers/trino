@@ -748,6 +748,36 @@ func TestTrinoIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(TrinoTestSuite))
 }
 
+func TestInvalidURIDoesNotExposeSecrets(t *testing.T) {
+	const password = "uri-password-sentinel"
+	const token = "uri-token-sentinel"
+	for _, scheme := range []string{"trino", "http", "https"} {
+		for _, tc := range []struct {
+			name       string
+			address    string
+			diagnostic string
+		}{
+			{"escape", "localhost/%zz", "invalid URL escape"},
+			{"port", "localhost:invalid/catalog", "invalid port"},
+		} {
+			t.Run(scheme+"/"+tc.name, func(t *testing.T) {
+				uri := scheme + "://user:" + password + "@" + tc.address + "?token=" + token
+				mem := memory.NewCheckedAllocator(memory.DefaultAllocator)
+				t.Cleanup(func() { mem.AssertSize(t, 0) })
+				db, err := trino.NewDriver(mem).NewDatabaseWithContext(context.Background(), map[string]string{adbc.OptionKeyURI: uri})
+				if db != nil {
+					t.Cleanup(func() { require.NoError(t, db.Close(context.Background())) })
+				}
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.diagnostic)
+				assert.NotContains(t, err.Error(), password)
+				assert.NotContains(t, err.Error(), token)
+				assert.NotContains(t, err.Error(), uri)
+			})
+		}
+	}
+}
+
 // TestURIParsing tests the parseTrinoURIToDSN function with various URI formats
 func TestURIParsing(t *testing.T) {
 	factory := trino.NewTrinoDBFactory()
