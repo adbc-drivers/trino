@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -256,9 +257,7 @@ func queryOnce(t *testing.T, serverURL string, opts map[string]string) {
 	all := map[string]string{
 		adbc.OptionKeyURI: strings.Replace(serverURL, "https://", "trino://", 1) + "/memory?externalAuthentication=true&SSLVerification=NONE",
 	}
-	for k, v := range opts {
-		all[k] = v
-	}
+	maps.Copy(all, opts)
 	db, err := NewTrinoDBFactory().CreateDB(context.Background(), "trino", all, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
