@@ -544,6 +544,15 @@ func (m *trinoTypeConverter) ConvertArrowToGo(arrowArray arrow.Array, index int,
 	// Handle Trino-specific Arrow to Go conversions
 	// Trino Go client has limited parameter type support, so convert unsupported types to strings
 	switch a := arrowArray.(type) {
+	case *array.Timestamp:
+		timestampType := a.DataType().(*arrow.TimestampType)
+		if timestampType.TimeZone != "" {
+			// Preserve the instant without historical zone offsets containing
+			// seconds, which Trino cannot represent in timestamp literals.
+			return a.Value(index).ToTime(timestampType.Unit).UTC(), nil
+		}
+		return m.DefaultTypeConverter.ConvertArrowToGo(arrowArray, index, field)
+
 	case *array.Time32:
 		// For Trino driver, convert Time32 to Trino's Time type (time without timezone)
 		timeType := a.DataType().(*arrow.Time32Type)
