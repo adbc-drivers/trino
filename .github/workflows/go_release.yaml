@@ -419,7 +419,7 @@ jobs:
         with:
           cache: false
           check-latest: true
-          go-version: "stable"
+          go-version-file: go/go.mod
 
       - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e  # v0.11.3
         with:
