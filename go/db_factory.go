@@ -67,7 +67,26 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 		return nil, err
 	}
 
-	return sql.Open(driverName, dsn)
+	cfg, err := trino.ParseDSN(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse DSN: %v", err)
+	}
+	if !cfg.ExternalAuthentication {
+		return sql.Open(driverName, dsn)
+	}
+
+	// A TokenCache cannot be expressed in a DSN, so open the database from a
+	// Connector that shares the token with the other databases of the process
+	// and, by default, with later processes through the OS keyring.
+	cfg.TokenCache, err = getTokenCache(cfg, opts[OptionTokenCache], logger)
+	if err != nil {
+		return nil, err
+	}
+	connector, err := trino.NewConnector(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return sql.OpenDB(connector), nil
 }
 
 // registerCustomClientForTimeout creates and registers a custom HTTP client
