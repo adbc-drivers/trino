@@ -1266,3 +1266,52 @@ func TestHTTPHeaderOptions(t *testing.T) {
 		})
 	}
 }
+
+// TestSetCurrentCatalogKeepsSchema checks that setting the current catalog keeps
+// the current schema if the new catalog has a schema with that name.
+func TestSetCurrentCatalogKeepsSchema(t *testing.T) {
+	withQuirks(t, func(q *TrinoQuirks) {
+		ctx := context.Background()
+
+		drv := q.SetupDriver(t)
+		defer q.TearDownDriver(t, drv)
+
+		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, db.Close(ctx))
+		}()
+
+		cnxn, err := db.Open(ctx)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, cnxn.Close(ctx))
+		}()
+
+		opts := cnxn.(adbc.GetSetOptionsWithContext)
+
+		current := func() string {
+			catalog, err := opts.GetOption(ctx, adbc.OptionKeyCurrentCatalog)
+			require.NoError(t, err)
+			schema, err := opts.GetOption(ctx, adbc.OptionKeyCurrentDbSchema)
+			require.NoError(t, err)
+			return catalog + "." + schema
+		}
+
+		require.Equal(t, "memory.default", current())
+		require.NoError(t, opts.SetOption(ctx, adbc.OptionKeyCurrentCatalog, "memory"))
+		assert.Equal(t, "memory.default", current())
+
+		// tpch has no schema "default", so the schema has to be set as well.
+		require.NoError(t, opts.SetOption(ctx, adbc.OptionKeyCurrentCatalog, "tpch"))
+		assert.Equal(t, "tpch.information_schema", current())
+		require.NoError(t, opts.SetOption(ctx, adbc.OptionKeyCurrentDbSchema, "tiny"))
+		assert.Equal(t, "tpch.tiny", current())
+
+		// The same works inside a transaction.
+		require.NoError(t, opts.SetOption(ctx, adbc.OptionKeyAutoCommit, adbc.OptionValueDisabled))
+		require.NoError(t, opts.SetOption(ctx, adbc.OptionKeyCurrentCatalog, "memory"))
+		assert.Equal(t, "memory.information_schema", current())
+		require.NoError(t, cnxn.Rollback(ctx))
+	})
+}
