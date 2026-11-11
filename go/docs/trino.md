@@ -87,6 +87,12 @@ an encrypted HTTPS connection:
 
 - `trino://localhost:8443/catalog?SSLVerification=NONE` → Uses HTTPS with certificate verification disabled
 
+Use `SSLVerification=CA` to verify the certificate chain without checking the
+host name. If `SSLCertPath` or `SSLCert` is given, only that certificate is
+trusted:
+
+- `trino://10.0.0.5:8443/catalog?SSLVerification=CA&SSLCertPath=/path/ca.pem` → Uses HTTPS, verifying the chain against the given CA only
+
 Client Certificate Authentication:
 
 For mutual TLS, use HTTPS and provide the client certificate using

@@ -96,8 +96,8 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 	}
 
 	var httpClientName strings.Builder
-	fmt.Fprintf(&httpClientName, "timeout=%s|skip_verification=%t|ssl_cert_path=%s|ssl_cert=%s",
-		timeout, skipVerification, cfg.SSLCertPath, cfg.SSLCert)
+	fmt.Fprintf(&httpClientName, "timeout=%s|ssl_verification=%s|ssl_cert_path=%s|ssl_cert=%s",
+		timeout, cfg.SSLVerification, cfg.SSLCertPath, cfg.SSLCert)
 	if tlsConfig != nil {
 		for _, cert := range tlsConfig.Certificates {
 			for _, der := range cert.Certificate {
@@ -174,8 +174,10 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 		tlsConfig.InsecureSkipVerify = true
 	}
 
+	var cert []byte
 	if cfg.SSLCert != "" || cfg.SSLCertPath != "" {
-		cert, err := loadSSLCert(cfg)
+		var err error
+		cert, err = loadSSLCert(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load SSL certificate: %v", err)
 		}
@@ -188,6 +190,22 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 			return nil, fmt.Errorf("failed to parse SSL certificate")
 		}
 		tlsConfig.RootCAs = certPool
+	}
+
+	verifyCA := cfg.SSLVerification == trino.SSLVerificationCA
+	if verifyCA {
+		// Verify the certificate chain but not the host name, as the Trino Go
+		// client does, trusting only the given certificate if any: with the
+		// system roots too, any public certificate would be accepted.
+		caTLSConfig, err := (&trino.Config{
+			SSLVerification: trino.SSLVerificationCA,
+			SSLCert:         string(cert),
+		}).TLSConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure SSL verification: %w", err)
+		}
+		tlsConfig.InsecureSkipVerify = true
+		tlsConfig.VerifyConnection = caTLSConfig.VerifyConnection
 	}
 
 	clientTLSConfig, err := (&trino.Config{
@@ -206,7 +224,7 @@ func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) 
 		tlsConfig.Certificates = clientTLSConfig.Certificates
 	}
 
-	if skipVerification || cfg.SSLCert != "" || cfg.SSLCertPath != "" || clientTLSConfig != nil {
+	if skipVerification || verifyCA || cfg.SSLCert != "" || cfg.SSLCertPath != "" || clientTLSConfig != nil {
 		return tlsConfig, nil
 	}
 
