@@ -14,7 +14,7 @@
 
 repos:
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: 25bcf95026b96e2dd3c0aec3090c3d6ef6ca2e6c  # frozen: v0.17.3
+  rev: c0f278f1254ccc8fb09676bcdb8d847e7db493e5  # frozen: v0.17.4
   hooks:
     - id: ruff-check
       name: "ruff check (isort)"
@@ -57,7 +57,7 @@ repos:
   - id: trailing-whitespace
 
 - repo: https://github.com/adbc-drivers/dev
-  rev: 0e8c506efdc92096ab0d5610698447013d1e2a3c
+  rev: 0c94e3235eee46cc3ace6aa63daa203f3abcf53d  # frozen: v0.1.0
   hooks:
   - id: rat
 
