@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -284,19 +285,28 @@ func (f *TrinoDBFactory) BuildTrinoDSN(opts map[string]string) (string, error) {
 		return "", fmt.Errorf("missing required option %s", adbc.OptionKeyURI)
 	}
 
-	if strings.HasPrefix(baseURI, "trino://") {
+	if hasPrefixFold(baseURI, "trino://") {
 		return f.parseTrinoURIToDSN(baseURI, username, password)
 	}
 
 	return f.buildDSNFromHTTP(baseURI, username, password)
 }
 
+// hasPrefixFold reports whether s begins with prefix, ignoring case, as URI
+// schemes are case-insensitive.
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
+}
+
 // parseTrinoURIToDSN converts a Trino URI to Trino DSN format using pure URL manipulation.
+// It rejects an SSL value that is not a boolean, a path with more than
+// /catalog/schema or an empty catalog, and a catalog or schema given both in
+// the path and as a query parameter.
 // Examples:
 //
-//	trino://localhost:8080/hive/default → http://localhost:8080?catalog=hive&schema=default
-//	trino://user:pass@host:8080/postgresql/public → http://user:pass@host:8080?catalog=postgresql&schema=public
-//	trino://user@host/memory/default?SSL=true → https://user@host:443?catalog=memory&schema=default&SSL=true
+//	trino://localhost:8080/hive/default → https://localhost:8080?catalog=hive&schema=default
+//	trino://user:pass@host:8080/postgresql/public?SSL=false → http://user:pass@host:8080?SSL=false&catalog=postgresql&schema=public
+//	trino://user@host/memory/default → https://user@host:8443?catalog=memory&schema=default
 func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string) (string, error) {
 	u, err := driverbase.SafeParseURL(trinoURI)
 	if err != nil {
@@ -306,15 +316,28 @@ func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string)
 	queryParams := u.Query()
 
 	scheme := "https"
-	if strings.EqualFold(queryParams.Get("SSL"), "false") {
-		scheme = "http"
+	if ssl := queryParams.Get("SSL"); ssl != "" {
+		enabled, err := strconv.ParseBool(strings.ToLower(ssl))
+		if err != nil {
+			return "", fmt.Errorf("invalid SSL value %q in Trino URI: expected true or false (or 1 or 0)", ssl)
+		}
+		if !enabled {
+			scheme = "http"
+		}
 	}
 
-	if path := strings.TrimPrefix(u.Path, "/"); path != "" {
-		parts := strings.SplitN(path, "/", 2)
-		queryParams.Set("catalog", parts[0])
-		if len(parts) == 2 && parts[1] != "" {
-			queryParams.Set("schema", parts[1])
+	// Split the escaped path, so that an escaped "/" stays part of a name.
+	if path := strings.TrimRight(strings.TrimPrefix(u.EscapedPath(), "/"), "/"); path != "" {
+		parts := strings.Split(path, "/")
+		if len(parts) > 2 || parts[0] == "" {
+			return "", fmt.Errorf("invalid path %q in Trino URI: expected /catalog or /catalog/schema", u.EscapedPath())
+		}
+		for i, name := range []string{"catalog", "schema"}[:len(parts)] {
+			if queryParams.Has(name) {
+				return "", fmt.Errorf("%[1]s is set both in the Trino URI path and the %[1]s parameter", name)
+			}
+			value, _ := url.PathUnescape(parts[i]) // cannot fail: url.Parse validated the escapes
+			queryParams.Set(name, value)
 		}
 	}
 
@@ -342,7 +365,7 @@ func (f *TrinoDBFactory) ensureHostPort(u *url.URL, scheme string) string {
 
 // buildDSNFromHTTP handles existing HTTP/HTTPS DSNs and plain host strings.
 func (f *TrinoDBFactory) buildDSNFromHTTP(baseURI, username, password string) (string, error) {
-	if !strings.HasPrefix(baseURI, "http://") && !strings.HasPrefix(baseURI, "https://") {
+	if !hasPrefixFold(baseURI, "http://") && !hasPrefixFold(baseURI, "https://") {
 
 		scheme := "https://"
 		if strings.Contains(baseURI, "SSL=false") {
