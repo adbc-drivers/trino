@@ -170,7 +170,7 @@ func (c *trinoConnectionImpl) GetTableSchema(ctx context.Context, catalog *strin
 			wrappedColType.Scale = &s
 		} else if length, ok := colType.Length(); ok {
 			l := int64(length)
-			wrappedColType.Precision = &l
+			wrappedColType.Length = &l
 		}
 
 		arrowType, nullable, metadata, err := typeConverter.ConvertRawColumnType(wrappedColType)

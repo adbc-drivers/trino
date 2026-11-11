@@ -218,6 +218,7 @@ func (q *TrinoQuirks) SampleTableSchemaMetadata(tblName string, dt arrow.DataTyp
 	case arrow.STRING:
 		metadata["sql.column_name"] = "strings"
 		metadata["sql.database_type_name"] = "VARCHAR"
+		metadata["sql.length"] = "255"
 	case arrow.FLOAT32:
 		metadata["sql.column_name"] = "floats"
 		metadata["sql.database_type_name"] = "float"
@@ -657,6 +658,22 @@ func (s *TrinoTests) TestSelect() {
 				},
 			}, nil),
 			expected: `[{"greeting": "hello world"}, {"greeting": null}, {"greeting": "test string"}]`,
+		},
+		{
+			name:  "null",
+			query: "SELECT NULL AS n FROM memory.default.test_types",
+			schema: arrow.NewSchema([]arrow.Field{
+				{
+					Name:     "n",
+					Type:     arrow.Null,
+					Nullable: true,
+					Metadata: arrow.MetadataFrom(map[string]string{
+						"sql.column_name":        "n",
+						"sql.database_type_name": "UNKNOWN",
+					}),
+				},
+			}, nil),
+			expected: `[{"n": null}, {"n": null}, {"n": null}]`,
 		},
 	} {
 		s.Run(testCase.name, func() {
