@@ -43,6 +43,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	trino "github.com/adbc-drivers/trino"
+	trinoclient "github.com/trinodb/trino-go-client/trino"
 )
 
 // TrinoQuirks implements validation.DriverQuirks for Trino ADBC driver
@@ -1263,6 +1264,33 @@ func TestHTTPHeaderOptions(t *testing.T) {
 			var adbcErr adbc.Error
 			require.ErrorAs(t, err, &adbcErr)
 			assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
+		})
+	}
+}
+
+// TestErrorStatus checks the ADBC status of some Trino and context errors.
+func TestErrorStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want adbc.Status
+	}{
+		{"type mismatch", &trinoclient.ErrTrino{
+			ErrorType: "USER_ERROR", ErrorName: "TYPE_MISMATCH",
+			Message: "line 1:10: Cannot apply operator: integer + varchar(1)",
+		}, adbc.StatusInvalidArgument},
+		{"insert type mismatch", &trinoclient.ErrTrino{
+			ErrorType: "USER_ERROR", ErrorName: "TYPE_MISMATCH",
+			Message: "line 1:1: Insert query has mismatched column types: Table: [varchar], Query: [bigint]",
+		}, adbc.StatusAlreadyExists},
+		{"killed", &trinoclient.ErrTrino{
+			ErrorType: "USER_ERROR", ErrorName: "ADMINISTRATIVELY_KILLED",
+		}, adbc.StatusCancelled},
+		{"deadline", fmt.Errorf("trino: query failed: %w", context.DeadlineExceeded), adbc.StatusTimeout},
+		{"cancelled", fmt.Errorf("trino: query failed: %w", context.Canceled), adbc.StatusCancelled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, trino.TrinoErrorInspector{}.InspectError(tc.err, adbc.StatusIO).Code)
 		})
 	}
 }
