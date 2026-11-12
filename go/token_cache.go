@@ -186,14 +186,19 @@ func (c *tokenCache) load() (string, error) {
 		return "", err
 	}
 	n, chunked, err := chunkCount(value)
-	if err != nil || !chunked {
-		return value, err
+	if err != nil {
+		return "", err
+	}
+	if !chunked {
+		return value, nil
 	}
 	var b strings.Builder
 	for i := range n {
 		chunk, err := systemKeyring.Get(keyringService, chunkKey(c.key, i))
 		if err != nil {
-			return "", fmt.Errorf("reading token chunk %d of %d: %w", i+1, n, err)
+			// Not wrapped: a missing chunk is a corrupt token, which is
+			// reported, rather than no token.
+			return "", fmt.Errorf("reading token chunk %d of %d: %v", i+1, n, err)
 		}
 		b.WriteString(chunk)
 	}
