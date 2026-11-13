@@ -34,6 +34,7 @@ import (
 	"testing"
 
 	"github.com/apache/arrow-adbc/go/adbc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/trinodb/trino-go-client/trino"
@@ -108,11 +109,6 @@ func resetTokenCaches() {
 	tokenCaches.Clear()
 }
 
-func testConfig(t *testing.T, serverURI string) *trino.Config {
-	t.Helper()
-	return &trino.Config{ServerURI: serverURI}
-}
-
 func TestTokenCacheKey(t *testing.T) {
 	for _, tc := range []struct{ uri, key string }{
 		{"https://trino.example.com", "https://trino.example.com:443"},
@@ -129,11 +125,11 @@ func TestTokenCacheKey(t *testing.T) {
 func TestTokenCacheSharedPerServerAndUser(t *testing.T) {
 	useFakeKeyring(t)
 
-	a, err := getTokenCache(testConfig(t, "https://alice@trino.example.com"), "", nil)
+	a, err := getTokenCache("https://alice@trino.example.com", true, nil)
 	require.NoError(t, err)
-	b, err := getTokenCache(testConfig(t, "https://alice@trino.example.com:443"), TokenCacheKeyring, nil)
+	b, err := getTokenCache("https://alice@trino.example.com:443", true, nil)
 	require.NoError(t, err)
-	other, err := getTokenCache(testConfig(t, "https://bob@trino.example.com"), "", nil)
+	other, err := getTokenCache("https://bob@trino.example.com", true, nil)
 	require.NoError(t, err)
 
 	assert.Same(t, a, b)
@@ -146,16 +142,16 @@ func TestTokenCacheSharedPerServerAndUser(t *testing.T) {
 
 func TestTokenCacheKeyringPersistsAcrossProcesses(t *testing.T) {
 	k := useFakeKeyring(t)
-	cfg := testConfig(t, "https://trino.example.com")
+	uri := "https://trino.example.com"
 
-	cache, err := getTokenCache(cfg, "", nil)
+	cache, err := getTokenCache(uri, true, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "", cache.Token())
 	cache.SetToken("token-1")
 	assert.Equal(t, "token-1", k.entries[keyringService+"/https://trino.example.com:443"])
 
 	resetTokenCaches()
-	cache, err = getTokenCache(cfg, "", nil)
+	cache, err = getTokenCache(uri, true, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "token-1", cache.Token())
 
@@ -163,7 +159,7 @@ func TestTokenCacheKeyringPersistsAcrossProcesses(t *testing.T) {
 	cache.SetToken("")
 	assert.Empty(t, k.entries)
 	resetTokenCaches()
-	cache, err = getTokenCache(cfg, "", nil)
+	cache, err = getTokenCache(uri, true, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "", cache.Token())
 }
@@ -171,16 +167,16 @@ func TestTokenCacheKeyringPersistsAcrossProcesses(t *testing.T) {
 func TestTokenCacheKeyringChunksLargeTokens(t *testing.T) {
 	k := useFakeKeyring(t)
 	k.maxSize = 2560
-	cfg := testConfig(t, "https://trino.example.com")
+	uri := "https://trino.example.com"
 	token := strings.Repeat("abcdefghij", 450) // 4500 bytes, like a large JWT
 
-	cache, err := getTokenCache(cfg, "", nil)
+	cache, err := getTokenCache(uri, true, nil)
 	require.NoError(t, err)
 	cache.SetToken(token)
 	assert.Len(t, k.entries, 6, "5 chunks and the chunk count")
 
 	resetTokenCaches()
-	cache, err = getTokenCache(cfg, "", nil)
+	cache, err = getTokenCache(uri, true, nil)
 	require.NoError(t, err)
 	assert.Equal(t, token, cache.Token())
 
@@ -190,18 +186,18 @@ func TestTokenCacheKeyringChunksLargeTokens(t *testing.T) {
 
 func TestTokenCacheMemoryDoesNotUseKeyring(t *testing.T) {
 	k := useFakeKeyring(t)
-	cfg := testConfig(t, "https://trino.example.com")
+	uri := "https://trino.example.com"
 
-	cache, err := getTokenCache(cfg, TokenCacheMemory, nil)
+	cache, err := getTokenCache(uri, false, nil)
 	require.NoError(t, err)
 	cache.SetToken("token-1")
 	assert.Empty(t, k.entries)
 
-	again, err := getTokenCache(cfg, TokenCacheMemory, nil)
+	again, err := getTokenCache(uri, false, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "token-1", again.Token())
 
-	keyringCache, err := getTokenCache(cfg, TokenCacheKeyring, nil)
+	keyringCache, err := getTokenCache(uri, true, nil)
 	require.NoError(t, err)
 	assert.NotSame(t, cache, keyringCache)
 }
@@ -210,20 +206,41 @@ func TestTokenCacheKeyringUnavailable(t *testing.T) {
 	k := useFakeKeyring(t)
 	k.err = errors.New("no secret service")
 
-	cache, err := getTokenCache(testConfig(t, "https://trino.example.com"), "", nil)
+	cache, err := getTokenCache("https://trino.example.com", true, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "", cache.Token())
 	cache.SetToken("token-1")
 	assert.Equal(t, "token-1", cache.Token())
 }
 
-func TestTokenCacheInvalidOption(t *testing.T) {
-	useFakeKeyring(t)
-	_, err := NewTrinoDBFactory().CreateDB(context.Background(), "trino", map[string]string{
-		adbc.OptionKeyURI: "trino://trino.example.com/memory?externalAuthentication=true",
-		OptionTokenCache:  "disk",
-	}, nil)
-	require.ErrorContains(t, err, `invalid value for trino.token_cache: "disk"`)
+func TestExternalAuthOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		opts         map[string]string
+		externalAuth bool
+		tokenCache   string
+		err          string
+	}{
+		{name: "defaults", opts: map[string]string{adbc.OptionKeyURI: "trino://trino.example.com/memory"}, tokenCache: tokenCacheKeyring},
+		{name: "URI parameter", opts: map[string]string{adbc.OptionKeyURI: "https://trino.example.com?externalAuthentication=true"}, externalAuth: true, tokenCache: tokenCacheKeyring},
+		{name: "option", opts: map[string]string{adbc.OptionKeyURI: "trino://trino.example.com/memory", optionExternalAuthentication: "true", optionTokenCache: tokenCacheMemory}, externalAuth: true, tokenCache: tokenCacheMemory},
+		{name: "option overrides URI", opts: map[string]string{adbc.OptionKeyURI: "trino://trino.example.com/memory?externalAuthentication=true", optionExternalAuthentication: "false"}, tokenCache: tokenCacheKeyring},
+		{name: "invalid option", opts: map[string]string{optionExternalAuthentication: "maybe"}, err: `invalid value for trino.external_authentication: "maybe"`},
+		{name: "invalid URI parameter", opts: map[string]string{adbc.OptionKeyURI: "trino://trino.example.com/memory?externalAuthentication=maybe"}, err: `invalid value for trino.external_authentication: "maybe"`},
+		{name: "invalid URI", opts: map[string]string{adbc.OptionKeyURI: "trino://trino.example.com:port/memory"}, err: "invalid port"},
+		{name: "invalid token cache", opts: map[string]string{optionTokenCache: "disk"}, err: `invalid value for trino.token_cache: "disk"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			externalAuth, tokenCache, err := externalAuthOptions(tc.opts)
+			if tc.err != "" {
+				require.ErrorContains(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.externalAuth, externalAuth)
+			assert.Equal(t, tc.tokenCache, tokenCache)
+		})
+	}
 }
 
 // bufferLogger returns a logger whose output the test can inspect.
@@ -234,7 +251,7 @@ func bufferLogger() (*slog.Logger, *bytes.Buffer) {
 
 func TestTokenCacheInvalidServerURI(t *testing.T) {
 	useFakeKeyring(t)
-	_, err := getTokenCache(testConfig(t, "https://%zz"), "", nil)
+	_, err := getTokenCache("https://%zz", true, nil)
 	require.ErrorContains(t, err, "could not parse Trino server URI")
 }
 
@@ -243,7 +260,7 @@ func TestTokenCacheKeyringChunkWriteFails(t *testing.T) {
 	k.maxSize = 10 // smaller than a chunk, so the chunks cannot be saved either
 	logger, logs := bufferLogger()
 
-	cache, err := getTokenCache(testConfig(t, "https://trino.example.com"), "", logger)
+	cache, err := getTokenCache("https://trino.example.com", true, logger)
 	require.NoError(t, err)
 	cache.SetToken("a-token-over-ten-bytes")
 	assert.Equal(t, "a-token-over-ten-bytes", cache.Token(), "the token is still kept in memory")
@@ -274,7 +291,7 @@ func TestTokenCacheKeyringCorruptChunks(t *testing.T) {
 			maps.Copy(k.entries, tc.entries)
 			logger, logs := bufferLogger()
 
-			cache, err := getTokenCache(testConfig(t, "https://trino.example.com"), "", logger)
+			cache, err := getTokenCache("https://trino.example.com", true, logger)
 			require.NoError(t, err)
 			assert.Equal(t, "", cache.Token(), "a corrupt token is not used, so the user logs in again")
 			assert.Contains(t, logs.String(), tc.warning)
@@ -314,25 +331,25 @@ func forgetOSKeyringToken(t *testing.T, key string) {
 func TestTokenCacheOSKeyring(t *testing.T) {
 	useOSKeyring(t)
 	// A server of its own, so the test never touches a real token.
-	cfg := testConfig(t, "https://"+strings.ToLower(rand.Text())+".adbc-test.invalid")
-	key, err := tokenCacheKey(cfg.ServerURI)
+	uri := "https://" + strings.ToLower(rand.Text()) + ".adbc-test.invalid"
+	key, err := tokenCacheKey(uri)
 	require.NoError(t, err)
 	forgetOSKeyringToken(t, key)
 
 	// 4500 bytes, over the Windows and macOS limits, so it is saved in chunks
 	// there.
 	for _, token := range []string{"small-token", strings.Repeat("abcdefghij", 450)} {
-		cache, err := getTokenCache(cfg, "", nil)
+		cache, err := getTokenCache(uri, true, nil)
 		require.NoError(t, err)
 		cache.SetToken(token)
 
 		resetTokenCaches()
-		cache, err = getTokenCache(cfg, "", nil)
+		cache, err = getTokenCache(uri, true, nil)
 		require.NoError(t, err)
 		assert.Equal(t, token, cache.Token(), "a new process reads the token from the OS keyring")
 	}
 
-	cache, err := getTokenCache(cfg, "", nil)
+	cache, err := getTokenCache(uri, true, nil)
 	require.NoError(t, err)
 	cache.SetToken("")
 	_, err = keyring.Get(keyringService, key)
@@ -417,7 +434,7 @@ func TestTrinoOAuth2ReusesToken(t *testing.T) {
 func TestTrinoOAuth2MemoryTokenCache(t *testing.T) {
 	dsn, logins := trinoOAuth2DSN(t)
 	k := useFakeKeyring(t)
-	opts := map[string]string{OptionTokenCache: TokenCacheMemory}
+	opts := map[string]string{optionTokenCache: tokenCacheMemory}
 
 	queryCurrentUser(t, dsn, opts)
 	queryCurrentUser(t, dsn, opts)
@@ -461,4 +478,66 @@ func TestTrinoOAuth2OSKeyring(t *testing.T) {
 	resetTokenCaches()
 	queryCurrentUser(t, dsn, nil)
 	assert.Equal(t, int32(1), logins.Load(), "a new process reuses the token from the OS keyring")
+}
+
+// openDatabase opens a database through the ADBC driver.
+func openDatabase(t *testing.T, opts map[string]string) adbc.DatabaseWithContext {
+	t.Helper()
+	db, err := NewDriver(memory.DefaultAllocator).NewDatabaseWithContext(context.Background(), opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close(context.Background())) })
+	return db
+}
+
+// assertDatabaseOptions checks the options a database reports, and that they
+// cannot be changed after it is created.
+func assertDatabaseOptions(t *testing.T, db adbc.DatabaseWithContext, externalAuth, tokenCache string) {
+	t.Helper()
+	options := db.(adbc.GetSetOptionsWithContext)
+	for key, expected := range map[string]string{optionExternalAuthentication: externalAuth, optionTokenCache: tokenCache} {
+		value, err := options.GetOption(context.Background(), key)
+		require.NoError(t, err)
+		assert.Equal(t, expected, value, key)
+	}
+	var adbcErr adbc.Error
+	require.ErrorAs(t, db.SetOptions(context.Background(), map[string]string{optionTokenCache: tokenCacheMemory}), &adbcErr)
+	assert.Equal(t, adbc.StatusNotImplemented, adbcErr.Code)
+	_, err := options.GetOption(context.Background(), "trino.unknown")
+	require.ErrorAs(t, err, &adbcErr)
+	assert.Equal(t, adbc.StatusNotFound, adbcErr.Code)
+}
+
+func TestDatabaseInvalidOption(t *testing.T) {
+	_, err := NewDriver(memory.DefaultAllocator).NewDatabaseWithContext(context.Background(), map[string]string{
+		adbc.OptionKeyURI: "trino://trino.example.com/memory",
+		optionTokenCache:  "disk",
+	})
+	var adbcErr adbc.Error
+	require.ErrorAs(t, err, &adbcErr)
+	assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
+	assert.ErrorContains(t, err, `invalid value for trino.token_cache: "disk"`)
+}
+
+func TestDatabaseOptionsDefaults(t *testing.T) {
+	dsn := os.Getenv("TRINO_DSN")
+	if dsn == "" {
+		t.Skip("Set TRINO_DSN environment variable")
+	}
+	db := openDatabase(t, map[string]string{adbc.OptionKeyURI: dsn})
+	assertDatabaseOptions(t, db, "false", tokenCacheKeyring)
+}
+
+func TestTrinoOAuth2Option(t *testing.T) {
+	dsn, logins := trinoOAuth2DSN(t)
+	useFakeKeyring(t)
+	// The option enables external authentication without the URI parameter.
+	opts := map[string]string{
+		adbc.OptionKeyURI:            strings.Replace(dsn, "&externalAuthentication=true", "", 1),
+		optionExternalAuthentication: "true",
+		optionTokenCache:             tokenCacheMemory,
+	}
+
+	assertDatabaseOptions(t, openDatabase(t, opts), "true", tokenCacheMemory)
+	queryCurrentUser(t, opts[adbc.OptionKeyURI], opts)
+	assert.Equal(t, int32(1), logins.Load())
 }

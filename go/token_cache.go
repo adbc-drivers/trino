@@ -15,6 +15,7 @@
 package trino
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -24,19 +25,25 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/adbc-drivers/driverbase-go/driverbase"
+	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/trinodb/trino-go-client/trino"
 	"github.com/zalando/go-keyring"
 )
 
 const (
-	// OptionTokenCache selects where the token obtained through external
-	// authentication (externalAuthentication=true) is kept.
-	OptionTokenCache = "trino.token_cache"
-	// TokenCacheKeyring keeps the token in memory for the process and in the
+	// optionExternalAuthentication logs in through the server's external
+	// authentication (OAuth 2.0), like the externalAuthentication URI
+	// parameter, which it overrides.
+	optionExternalAuthentication = "trino.external_authentication"
+	// optionTokenCache selects where the token obtained through external
+	// authentication is kept.
+	optionTokenCache = "trino.token_cache"
+	// tokenCacheKeyring keeps the token in memory for the process and in the
 	// OS keyring, so that later processes reuse it. This is the default.
-	TokenCacheKeyring = "keyring"
-	// TokenCacheMemory keeps the token in memory for the process only.
-	TokenCacheMemory = "memory"
+	tokenCacheKeyring = "keyring"
+	// tokenCacheMemory keeps the token in memory for the process only.
+	tokenCacheMemory = "memory"
 
 	keyringService = "adbc-driver-trino"
 	// keyringChunkSize keeps each keyring entry under the Windows Credential
@@ -82,17 +89,32 @@ type tokenCache struct {
 
 var _ trino.TokenCache = (*tokenCache)(nil)
 
-// getTokenCache returns the process-wide cache for the server and user of cfg.
-func getTokenCache(cfg *trino.Config, mode string, logger *slog.Logger) (*tokenCache, error) {
-	var persist bool
-	switch mode {
-	case "", TokenCacheKeyring:
-		persist = true
-	case TokenCacheMemory:
-	default:
-		return nil, fmt.Errorf("invalid value for %s: %q (expected %q or %q)", OptionTokenCache, mode, TokenCacheKeyring, TokenCacheMemory)
+// externalAuthOptions returns whether opts log in through external
+// authentication, and where the token is kept.
+func externalAuthOptions(opts map[string]string) (externalAuth bool, tokenCache string, err error) {
+	tokenCache = cmp.Or(opts[optionTokenCache], tokenCacheKeyring)
+	if tokenCache != tokenCacheKeyring && tokenCache != tokenCacheMemory {
+		return false, "", fmt.Errorf("invalid value for %s: %q (expected %q or %q)", optionTokenCache, tokenCache, tokenCacheKeyring, tokenCacheMemory)
 	}
-	key, err := tokenCacheKey(cfg.ServerURI)
+	value, ok := opts[optionExternalAuthentication]
+	if !ok {
+		u, err := driverbase.SafeParseURL(opts[adbc.OptionKeyURI])
+		if err != nil {
+			return false, "", err
+		}
+		value = cmp.Or(u.Query().Get("externalAuthentication"), "false")
+	}
+	externalAuth, err = strconv.ParseBool(value)
+	if err != nil {
+		return false, "", fmt.Errorf("invalid value for %s: %q", optionExternalAuthentication, value)
+	}
+	return externalAuth, tokenCache, nil
+}
+
+// getTokenCache returns the process-wide cache for the server and user of
+// serverURI, which also keeps the token in the OS keyring when persist is set.
+func getTokenCache(serverURI string, persist bool, logger *slog.Logger) (*tokenCache, error) {
+	key, err := tokenCacheKey(serverURI)
 	if err != nil {
 		return nil, err
 	}

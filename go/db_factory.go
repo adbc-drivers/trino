@@ -64,12 +64,17 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 	if err != nil {
 		return nil, err
 	}
+	externalAuth, tokenCache, err := externalAuthOptions(opts)
+	if err != nil {
+		return nil, err
+	}
 
 	// Register custom HTTP client to prevent infrastructure timeouts
 	cfg, err := f.registerCustomClientForTimeout(dsn, opts)
 	if err != nil {
 		return nil, err
 	}
+	cfg.ExternalAuthentication = externalAuth
 	if !cfg.ExternalAuthentication {
 		dsn, err := cfg.FormatDSN()
 		if err != nil {
@@ -81,7 +86,7 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 	// A TokenCache cannot be expressed in a DSN, so open the database from a
 	// Connector that shares the token with the other databases of the process
 	// and, by default, with later processes through the OS keyring.
-	cfg.TokenCache, err = getTokenCache(cfg, opts[OptionTokenCache], logger)
+	cfg.TokenCache, err = getTokenCache(cfg.ServerURI, tokenCache == tokenCacheKeyring, logger)
 	if err != nil {
 		return nil, err
 	}
