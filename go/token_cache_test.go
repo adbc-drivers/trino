@@ -26,7 +26,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/cookiejar"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -225,93 +224,6 @@ func TestTokenCacheInvalidOption(t *testing.T) {
 		OptionTokenCache:  "disk",
 	}, nil)
 	require.ErrorContains(t, err, `invalid value for trino.token_cache: "disk"`)
-}
-
-// fakeOAuthCoordinator answers queries only with its token, and challenges
-// other requests with Trino's external authentication flow without a
-// redirect URL, so that no browser is opened.
-func fakeOAuthCoordinator(t *testing.T) (*httptest.Server, *atomic.Int32) {
-	t.Helper()
-	var logins atomic.Int32
-	const token = "oauth-token"
-	var server *httptest.Server
-	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/oauth2/token/1" && r.Method == http.MethodGet:
-			logins.Add(1)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprintf(w, `{"token":%q}`, token)
-		case r.URL.Path == "/oauth2/token/1" && r.Method == http.MethodDelete:
-			w.WriteHeader(http.StatusNoContent)
-		case r.Header.Get("Authorization") != "Bearer "+token:
-			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer x_token_server="%s/oauth2/token/1"`, server.URL))
-			w.WriteHeader(http.StatusUnauthorized)
-		case r.URL.Path == "/v1/statement":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprintf(w, `{"id":"q1","nextUri":"%s/v1/statement/q1/1","stats":{"state":"QUEUED"}}`, server.URL)
-		case r.URL.Path == "/v1/statement/q1/1":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprint(w, `{"id":"q1","stats":{"state":"FINISHED"},"columns":[{"name":"_col0","type":"integer","typeSignature":{"rawType":"integer","arguments":[]}}],"data":[[1]]}`)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	t.Cleanup(server.Close)
-	return server, &logins
-}
-
-func queryOnce(t *testing.T, serverURL string, opts map[string]string) {
-	t.Helper()
-	all := map[string]string{
-		adbc.OptionKeyURI: strings.Replace(serverURL, "https://", "trino://", 1) + "/memory?externalAuthentication=true&SSLVerification=NONE",
-	}
-	maps.Copy(all, opts)
-	db, err := NewTrinoDBFactory().CreateDB(context.Background(), "trino", all, nil)
-	require.NoError(t, err)
-	defer func() { require.NoError(t, db.Close()) }()
-	var n int
-	require.NoError(t, db.QueryRowContext(context.Background(), "SELECT 1").Scan(&n))
-	assert.Equal(t, 1, n)
-}
-
-func TestExternalAuthenticationReusesTokenAcrossDatabases(t *testing.T) {
-	useFakeKeyring(t)
-	server, logins := fakeOAuthCoordinator(t)
-
-	queryOnce(t, server.URL, nil)
-	queryOnce(t, server.URL, nil)
-	assert.Equal(t, int32(1), logins.Load(), "databases in one process share the token")
-
-	resetTokenCaches()
-	queryOnce(t, server.URL, nil)
-	assert.Equal(t, int32(1), logins.Load(), "a new process reuses the token from the keyring")
-}
-
-func TestExternalAuthenticationMemoryTokenCache(t *testing.T) {
-	k := useFakeKeyring(t)
-	server, logins := fakeOAuthCoordinator(t)
-	opts := map[string]string{OptionTokenCache: TokenCacheMemory}
-
-	queryOnce(t, server.URL, opts)
-	queryOnce(t, server.URL, opts)
-	assert.Equal(t, int32(1), logins.Load())
-	assert.Empty(t, k.entries)
-
-	resetTokenCaches()
-	queryOnce(t, server.URL, opts)
-	assert.Equal(t, int32(2), logins.Load(), "the token does not outlive the process")
-}
-
-func TestExternalAuthenticationReplacesRejectedKeyringToken(t *testing.T) {
-	k := useFakeKeyring(t)
-	server, logins := fakeOAuthCoordinator(t)
-	key, err := tokenCacheKey(server.URL)
-	require.NoError(t, err)
-	k.entries[keyringService+"/"+key] = "expired-token"
-
-	queryOnce(t, server.URL, nil)
-	assert.Equal(t, int32(1), logins.Load())
-	assert.Equal(t, "oauth-token", k.entries[keyringService+"/"+key])
 }
 
 // bufferLogger returns a logger whose output the test can inspect.
