@@ -34,6 +34,21 @@ services:
     volumes:
       - "./ci/docker/certs:/work/certs"
 
+  # OpenID Connect provider for Trino's OAuth 2.0 (external) authentication.
+  # It logs in without a login page, always as the user "oauth-user". Trino
+  # calls it as oauth2:8080 and the tests' browser as localhost:8180; tokens
+  # carry the issuer of the token endpoint, which only Trino calls.
+  oauth2:
+    image: ghcr.io/navikt/mock-oauth2-server:6.1.3
+    environment:
+      SERVER_PORT: "8080"
+      JSON_CONFIG: >-
+        {"interactiveLogin": false, "tokenCallbacks": [{"issuerId": "default",
+        "tokenExpiry": 3600, "requestMappings": [{"requestParam": "grant_type",
+        "match": "*", "claims": {"sub": "oauth-user", "aud": ["trino"]}}]}]}
+    ports:
+      - 8180:8080
+
   trino:
     image: trinodb/trino:latest
     environment:
@@ -41,6 +56,8 @@ services:
     depends_on:
       cert-generator:
         condition: service_completed_successfully
+      oauth2:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "/usr/lib/trino/bin/health-check"]
       interval: 5s

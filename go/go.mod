@@ -26,6 +26,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.12.1
 	github.com/trinodb/trino-go-client v1.5.0
+	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/net v0.62.0
 )
 
@@ -34,9 +35,11 @@ require (
 	github.com/apache/thrift v0.25.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-json v0.12.0 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.4 // indirect
