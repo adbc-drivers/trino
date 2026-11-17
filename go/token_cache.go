@@ -19,12 +19,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/adbc-drivers/driverbase-go/driverbase"
 	"github.com/trinodb/trino-go-client/trino"
 	"github.com/zalando/go-keyring"
 )
@@ -167,15 +166,11 @@ func newTokenCache(serverURI string, backend keyringBackend, logger *slog.Logger
 
 // tokenCacheKey identifies the server and user a token belongs to.
 func tokenCacheKey(serverURI string) (string, error) {
-	u, err := url.Parse(serverURI)
+	u, err := driverbase.SafeParseURL(serverURI)
 	if err != nil {
 		return "", fmt.Errorf("could not parse Trino server URI: %w", err)
 	}
-	port := u.Port()
-	if port == "" {
-		port = map[string]string{"http": "80", "https": "443"}[strings.ToLower(u.Scheme)]
-	}
-	key := strings.ToLower(u.Scheme) + "://" + net.JoinHostPort(strings.ToLower(u.Hostname()), port)
+	key := strings.ToLower(u.Scheme) + "://" + serverHost(u)
 	if user := u.User.Username(); user != "" {
 		key = user + "@" + key
 	}
@@ -223,7 +218,8 @@ func (c *tokenCache) SetToken(token string) {
 // keyring entry, with the key holding the number of chunks. Big tokens are
 // not tried in one entry first: on macOS, go-keyring leaves the security
 // process it started running when it rejects them. The number of chunks is
-// saved last, so that other processes read the whole token or none.
+// saved last, so that other processes do not read chunks that are not saved
+// yet.
 func (c *tokenCache) store(token string) error {
 	if len(token) <= keyringChunkSize {
 		return c.keyring.Set(keyringService, c.key, token)
