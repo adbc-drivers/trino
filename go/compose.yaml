@@ -46,6 +46,12 @@ services:
         {"interactiveLogin": false, "tokenCallbacks": [{"issuerId": "default",
         "tokenExpiry": 3600, "requestMappings": [{"requestParam": "grant_type",
         "match": "*", "claims": {"sub": "oauth-user", "aud": ["trino"]}}]}]}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/isalive"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     ports:
       - 8180:8080
 
@@ -57,7 +63,7 @@ services:
       cert-generator:
         condition: service_completed_successfully
       oauth2:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "/usr/lib/trino/bin/health-check"]
       interval: 5s
