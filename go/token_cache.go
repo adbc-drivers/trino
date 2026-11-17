@@ -185,11 +185,12 @@ func (c *tokenCache) SetToken(token string) {
 }
 
 // store saves token under the key, or in chunks when it is too big for one
-// keyring entry, with the key holding the number of chunks.
+// keyring entry, with the key holding the number of chunks. Big tokens are
+// not tried in one entry first: on macOS, go-keyring leaves the security
+// process it started running when it rejects them.
 func (c *tokenCache) store(token string) error {
-	err := systemKeyring.Set(keyringService, c.key, token)
-	if !errors.Is(err, keyring.ErrSetDataTooBig) {
-		return err
+	if len(token) <= keyringChunkSize {
+		return systemKeyring.Set(keyringService, c.key, token)
 	}
 	n := 0
 	for start := 0; start < len(token); start += keyringChunkSize {
