@@ -37,10 +37,10 @@ const (
 	// optionTokenCache selects where the token obtained through external
 	// authentication is kept.
 	optionTokenCache = "trino.token_cache"
-	// tokenCacheKeyring keeps the token in memory for the process and in the
-	// OS keyring, so that later processes reuse it. This is the default.
+	// tokenCacheKeyring also keeps the token in the OS keyring, so that later
+	// processes reuse it. This is the default.
 	tokenCacheKeyring = "keyring"
-	// tokenCacheMemory keeps the token in memory for the process only.
+	// tokenCacheMemory keeps the token in memory only.
 	tokenCacheMemory = "memory"
 
 	keyringService = "adbc-driver-trino"
@@ -133,23 +133,36 @@ func (f *TrinoDBFactory) externalAuthConnector(cfg *trino.Config, dsn, tokenCach
 }
 
 // tokenCache returns the cache for the server and user of serverURI, which
-// databases with other configurations share too, so that they reuse the
-// token instead of logging in again.
+// all the Connectors for them share: when one logs in again, the others then
+// reuse its token instead of logging in too.
 func (f *TrinoDBFactory) tokenCache(serverURI, mode string, logger *slog.Logger) (*tokenCache, error) {
+	var backend keyringBackend
+	if mode == tokenCacheKeyring {
+		backend = f.keyring
+		if backend == nil {
+			backend = osKeyring{}
+		}
+	}
+	cache, err := newTokenCache(serverURI, backend, logger)
+	if err != nil {
+		return nil, err
+	}
+	// The memory cache is kept apart, so that it never writes to the keyring.
+	shared, _ := f.tokenCaches.LoadOrStore(mode+"|"+cache.key, cache)
+	return shared.(*tokenCache), nil
+}
+
+// newTokenCache returns a cache for the token of the server and user of
+// serverURI, which also keeps it in backend unless that is nil.
+func newTokenCache(serverURI string, backend keyringBackend, logger *slog.Logger) (*tokenCache, error) {
 	key, err := tokenCacheKey(serverURI)
 	if err != nil {
 		return nil, err
 	}
-	cache := &tokenCache{key: key, logger: logger}
-	if cache.logger == nil {
-		cache.logger = slog.Default()
+	if logger == nil {
+		logger = slog.Default()
 	}
-	// The memory cache never writes to the keyring.
-	if mode == tokenCacheKeyring {
-		cache.keyring = f.keyring
-	}
-	shared, _ := f.tokenCaches.LoadOrStore(mode+"|"+key, cache)
-	return shared.(*tokenCache), nil
+	return &tokenCache{key: key, keyring: backend, logger: logger}, nil
 }
 
 // tokenCacheKey identifies the server and user a token belongs to.
@@ -209,18 +222,18 @@ func (c *tokenCache) SetToken(token string) {
 // store saves token under the key, or in chunks when it is too big for one
 // keyring entry, with the key holding the number of chunks. Big tokens are
 // not tried in one entry first: on macOS, go-keyring leaves the security
-// process it started running when it rejects them.
+// process it started running when it rejects them. The number of chunks is
+// saved last, so that other processes read the whole token or none.
 func (c *tokenCache) store(token string) error {
 	if len(token) <= keyringChunkSize {
 		return c.keyring.Set(keyringService, c.key, token)
 	}
-	n := 0
-	for start := 0; start < len(token); start += keyringChunkSize {
-		chunk := token[start:min(start+keyringChunkSize, len(token))]
-		if err := c.keyring.Set(keyringService, chunkKey(c.key, n), chunk); err != nil {
+	n := (len(token) + keyringChunkSize - 1) / keyringChunkSize
+	for i := range n {
+		chunk := token[i*keyringChunkSize : min((i+1)*keyringChunkSize, len(token))]
+		if err := c.keyring.Set(keyringService, chunkKey(c.key, i), chunk); err != nil {
 			return err
 		}
-		n++
 	}
 	return c.keyring.Set(keyringService, c.key, keyringChunksPrefix+strconv.Itoa(n))
 }
@@ -250,15 +263,10 @@ func (c *tokenCache) load() (string, error) {
 	return b.String(), nil
 }
 
+// delete removes the token, and its chunks until one is missing, which also
+// removes the chunks that an interrupted store left without their number.
 func (c *tokenCache) delete() error {
-	value, err := c.keyring.Get(keyringService, c.key)
-	if err != nil {
-		return err
-	}
-	if n, chunked, err := chunkCount(value); err == nil && chunked {
-		for i := range n {
-			_ = c.keyring.Delete(keyringService, chunkKey(c.key, i))
-		}
+	for i := 0; c.keyring.Delete(keyringService, chunkKey(c.key, i)) == nil; i++ {
 	}
 	return c.keyring.Delete(keyringService, c.key)
 }

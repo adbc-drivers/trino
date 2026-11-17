@@ -39,7 +39,8 @@ import (
 // TrinoDBFactory provides Trino-specific database connection creation.
 // It handles Trino DSN formatting and connection parameters.
 type TrinoDBFactory struct {
-	// keyring keeps the external authentication tokens for later processes.
+	// keyring keeps the external authentication tokens for other databases
+	// and later processes; nil uses the OS keyring.
 	keyring keyringBackend
 	// redirect sends the user to log in; nil opens the default browser.
 	redirect trino.RedirectHandler
@@ -60,7 +61,7 @@ var (
 
 // NewTrinoDBFactory creates a new TrinoDBFactory.
 func NewTrinoDBFactory() *TrinoDBFactory {
-	return &TrinoDBFactory{keyring: osKeyring{}}
+	return &TrinoDBFactory{}
 }
 
 // CreateDB creates a *sql.DB using sql.Open with a Trino-specific DSN.

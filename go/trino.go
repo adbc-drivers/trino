@@ -656,7 +656,7 @@ func (db *trinoDatabase) SetOptions(ctx context.Context, opts map[string]string)
 	}
 	externalAuth, tokenCache, err := externalAuthOptions(opts)
 	if err != nil {
-		return err
+		return db.ErrorHelper.WrapInvalidArgument(err, "invalid option")
 	}
 	db.options = map[string]string{
 		optionExternalAuthentication: strconv.FormatBool(externalAuth),

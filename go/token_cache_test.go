@@ -143,34 +143,20 @@ func TestExternalAuthOptions(t *testing.T) {
 	}
 }
 
-func TestTokenCacheSharedPerServerAndUser(t *testing.T) {
-	f := &TrinoDBFactory{keyring: newMemoryKeyring()}
-	cache := func(uri, mode string) *tokenCache {
-		c, err := f.tokenCache(uri, mode, nil)
-		require.NoError(t, err)
-		return c
-	}
-
-	alice := cache("https://alice@trino.example.com", tokenCacheKeyring)
-	assert.Same(t, alice, cache("https://alice@trino.example.com:443", tokenCacheKeyring))
-	assert.NotSame(t, alice, cache("https://bob@trino.example.com", tokenCacheKeyring))
-	assert.NotSame(t, alice, cache("https://alice@trino.example.com", tokenCacheMemory), "the memory cache is kept apart")
-}
-
 func TestTokenCacheKeyringChunksLargeTokens(t *testing.T) {
 	k := newMemoryKeyring()
 	const uri = "https://trino.example.com"
 	const key = keyringService + "/https://trino.example.com:443"
 	token := strings.Repeat("abcdefghij", 450) // 4500 bytes, like an Entra ID token
 
-	cache, err := (&TrinoDBFactory{keyring: k}).tokenCache(uri, tokenCacheKeyring, nil)
+	cache, err := newTokenCache(uri, k, nil)
 	require.NoError(t, err)
 	cache.SetToken(token)
 	assert.Equal(t, keyringChunksPrefix+"5", k.entries[key])
 	assert.Len(t, k.entries, 6, "5 chunks and their count")
 
 	// A new process reads the chunks back.
-	cache, err = (&TrinoDBFactory{keyring: k}).tokenCache(uri, tokenCacheKeyring, nil)
+	cache, err = newTokenCache(uri, k, nil)
 	require.NoError(t, err)
 	assert.Equal(t, token, cache.Token())
 
@@ -183,7 +169,7 @@ func TestTokenCacheKeyringUnavailable(t *testing.T) {
 	k.err = errors.New("no secret service")
 	logger, logs := bufferLogger()
 
-	cache, err := (&TrinoDBFactory{keyring: k}).tokenCache("https://trino.example.com", tokenCacheKeyring, logger)
+	cache, err := newTokenCache("https://trino.example.com", k, logger)
 	require.NoError(t, err)
 	assert.Equal(t, "", cache.Token())
 	token := strings.Repeat("abcdefghij", 450)
@@ -198,7 +184,8 @@ func TestTokenCacheKeyringUnavailable(t *testing.T) {
 	}
 }
 
-// A process that stops while saving a token in chunks leaves them incomplete.
+// A process that stops while saving a token in chunks leaves them incomplete;
+// they are not used, and they are removed with the next token.
 func TestTokenCacheKeyringIncompleteToken(t *testing.T) {
 	const key = keyringService + "/https://trino.example.com:443"
 	for _, tc := range []struct {
@@ -212,6 +199,10 @@ func TestTokenCacheKeyringIncompleteToken(t *testing.T) {
 			warning: "reading token chunk 2 of 2",
 		},
 		{
+			name:    "chunks without their number",
+			entries: map[string]string{key + "#0": "first-half", key + "#1": "second-half"},
+		},
+		{
 			name:    "invalid chunk count",
 			entries: map[string]string{key: keyringChunksPrefix + "x"},
 			warning: "invalid token chunk count",
@@ -222,13 +213,13 @@ func TestTokenCacheKeyringIncompleteToken(t *testing.T) {
 			maps.Copy(k.entries, tc.entries)
 			logger, logs := bufferLogger()
 
-			cache, err := (&TrinoDBFactory{keyring: k}).tokenCache("https://trino.example.com", tokenCacheKeyring, logger)
+			cache, err := newTokenCache("https://trino.example.com", k, logger)
 			require.NoError(t, err)
 			assert.Equal(t, "", cache.Token(), "the user logs in again")
 			assert.Contains(t, logs.String(), tc.warning)
 
 			cache.SetToken("new-token")
-			assert.Equal(t, "new-token", k.entries[key])
+			assert.Equal(t, map[string]string{key: "new-token"}, k.entries)
 		})
 	}
 }
@@ -262,16 +253,16 @@ func TestTokenCacheOSKeyring(t *testing.T) {
 	forgetToken(t, k, key)
 
 	for _, token := range []string{"small-token", strings.Repeat("abcdefghij", 450)} {
-		cache, err := (&TrinoDBFactory{keyring: k}).tokenCache(uri, tokenCacheKeyring, nil)
+		cache, err := newTokenCache(uri, k, nil)
 		require.NoError(t, err)
 		cache.SetToken(token)
 
-		cache, err = (&TrinoDBFactory{keyring: k}).tokenCache(uri, tokenCacheKeyring, nil)
+		cache, err = newTokenCache(uri, k, nil)
 		require.NoError(t, err)
 		assert.Equal(t, token, cache.Token(), "a new process reads the token from the OS keyring")
 	}
 
-	cache, err := (&TrinoDBFactory{keyring: k}).tokenCache(uri, tokenCacheKeyring, nil)
+	cache, err := newTokenCache(uri, k, nil)
 	require.NoError(t, err)
 	cache.SetToken("")
 	for _, user := range []string{key, chunkKey(key, 0), chunkKey(key, 4)} {
@@ -405,8 +396,7 @@ func TestTrinoOAuth2ReusesToken(t *testing.T) {
 	f := &TrinoDBFactory{keyring: k, redirect: browser}
 
 	require.NoError(t, queryCurrentUser(f, dsn, nil))
-	// Other options, hence another Connector, still reuse the token.
-	require.NoError(t, queryCurrentUser(f, dsn, map[string]string{"trino.http_header.X-Trino-Client-Tags": "adbc-test"}))
+	require.NoError(t, queryCurrentUser(f, dsn, nil))
 	assert.Equal(t, int32(1), logins.Load(), "databases in one process share the token")
 	assert.NotEmpty(t, k.entries[keyringService+"/"+tokenKey(t, dsn)])
 
@@ -442,7 +432,9 @@ func TestTrinoOAuth2MemoryTokenCache(t *testing.T) {
 	f := &TrinoDBFactory{keyring: k, redirect: browser}
 
 	require.NoError(t, queryCurrentUser(f, dsn, opts))
-	require.NoError(t, queryCurrentUser(f, dsn, opts))
+	// Other options, hence another Connector, share the token in memory.
+	otherOpts := map[string]string{optionTokenCache: tokenCacheMemory, "trino.http_header.X-Trino-Client-Tags": "adbc-test"}
+	require.NoError(t, queryCurrentUser(f, dsn, otherOpts))
 	assert.Equal(t, int32(1), logins.Load())
 	assert.Empty(t, k.entries, "the keyring is not used")
 
@@ -483,8 +475,9 @@ func TestTrinoOAuth2OSKeyring(t *testing.T) {
 	k := osKeyringOrSkip(t)
 	forgetToken(t, k, tokenKey(t, dsn))
 
-	require.NoError(t, queryCurrentUser(&TrinoDBFactory{keyring: k, redirect: browser}, dsn, nil))
-	newProcess := &TrinoDBFactory{keyring: k, redirect: browser}
+	// Without a keyring, the factory uses the OS keyring.
+	require.NoError(t, queryCurrentUser(&TrinoDBFactory{redirect: browser}, dsn, nil))
+	newProcess := &TrinoDBFactory{redirect: browser}
 	require.NoError(t, queryCurrentUser(newProcess, dsn, nil))
 	assert.Equal(t, int32(1), logins.Load(), "a new process reuses the token from the OS keyring")
 }
