@@ -32,6 +32,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -41,29 +42,29 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-// fakeKeyring is an in-memory keyring that rejects values over maxSize, like
-// the Windows Credential Manager does.
-type fakeKeyring struct {
+// memoryKeyring is a keyring kept in memory, for the tests that do not need
+// the OS keyring. err makes every operation fail, as when there is no keyring.
+type memoryKeyring struct {
 	mu      sync.Mutex
 	entries map[string]string
-	maxSize int
 	err     error
 }
 
-func (k *fakeKeyring) Set(service, user, password string) error {
+func newMemoryKeyring() *memoryKeyring {
+	return &memoryKeyring{entries: map[string]string{}}
+}
+
+func (k *memoryKeyring) Set(service, user, password string) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if k.err != nil {
 		return k.err
 	}
-	if k.maxSize > 0 && len(password) > k.maxSize {
-		return keyring.ErrSetDataTooBig
-	}
 	k.entries[service+"/"+user] = password
 	return nil
 }
 
-func (k *fakeKeyring) Get(service, user string) (string, error) {
+func (k *memoryKeyring) Get(service, user string) (string, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if k.err != nil {
@@ -76,7 +77,7 @@ func (k *fakeKeyring) Get(service, user string) (string, error) {
 	return v, nil
 }
 
-func (k *fakeKeyring) Delete(service, user string) error {
+func (k *memoryKeyring) Delete(service, user string) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if k.err != nil {
@@ -89,24 +90,10 @@ func (k *fakeKeyring) Delete(service, user string) error {
 	return nil
 }
 
-// useFakeKeyring replaces the OS keyring and the process-wide caches for the
-// duration of the test.
-func useFakeKeyring(t *testing.T) *fakeKeyring {
-	t.Helper()
-	k := &fakeKeyring{entries: map[string]string{}}
-	saved := systemKeyring
-	systemKeyring = k
-	resetTokenCaches()
-	t.Cleanup(func() {
-		systemKeyring = saved
-		resetTokenCaches()
-	})
-	return k
-}
-
-// resetTokenCaches forgets the in-memory tokens, as a new process would.
-func resetTokenCaches() {
-	tokenCaches.Clear()
+// bufferLogger returns a logger whose output the test can inspect.
+func bufferLogger() (*slog.Logger, *bytes.Buffer) {
+	var buf bytes.Buffer
+	return slog.New(slog.NewTextHandler(&buf, nil)), &buf
 }
 
 func TestTokenCacheKey(t *testing.T) {
@@ -120,97 +107,8 @@ func TestTokenCacheKey(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, tc.key, key, tc.uri)
 	}
-}
-
-func TestTokenCacheSharedPerServerAndUser(t *testing.T) {
-	useFakeKeyring(t)
-
-	a, err := getTokenCache("https://alice@trino.example.com", true, nil)
-	require.NoError(t, err)
-	b, err := getTokenCache("https://alice@trino.example.com:443", true, nil)
-	require.NoError(t, err)
-	other, err := getTokenCache("https://bob@trino.example.com", true, nil)
-	require.NoError(t, err)
-
-	assert.Same(t, a, b)
-	assert.NotSame(t, a, other)
-
-	a.SetToken("alice-token")
-	assert.Equal(t, "alice-token", b.Token())
-	assert.Equal(t, "", other.Token())
-}
-
-func TestTokenCacheKeyringPersistsAcrossProcesses(t *testing.T) {
-	k := useFakeKeyring(t)
-	uri := "https://trino.example.com"
-
-	cache, err := getTokenCache(uri, true, nil)
-	require.NoError(t, err)
-	assert.Equal(t, "", cache.Token())
-	cache.SetToken("token-1")
-	assert.Equal(t, "token-1", k.entries[keyringService+"/https://trino.example.com:443"])
-
-	resetTokenCaches()
-	cache, err = getTokenCache(uri, true, nil)
-	require.NoError(t, err)
-	assert.Equal(t, "token-1", cache.Token())
-
-	// The client clears a rejected token before logging in again.
-	cache.SetToken("")
-	assert.Empty(t, k.entries)
-	resetTokenCaches()
-	cache, err = getTokenCache(uri, true, nil)
-	require.NoError(t, err)
-	assert.Equal(t, "", cache.Token())
-}
-
-func TestTokenCacheKeyringChunksLargeTokens(t *testing.T) {
-	k := useFakeKeyring(t)
-	k.maxSize = 2560
-	uri := "https://trino.example.com"
-	token := strings.Repeat("abcdefghij", 450) // 4500 bytes, like a large JWT
-
-	cache, err := getTokenCache(uri, true, nil)
-	require.NoError(t, err)
-	cache.SetToken(token)
-	assert.Len(t, k.entries, 6, "5 chunks and the chunk count")
-
-	resetTokenCaches()
-	cache, err = getTokenCache(uri, true, nil)
-	require.NoError(t, err)
-	assert.Equal(t, token, cache.Token())
-
-	cache.SetToken("small")
-	assert.Equal(t, map[string]string{keyringService + "/https://trino.example.com:443": "small"}, k.entries)
-}
-
-func TestTokenCacheMemoryDoesNotUseKeyring(t *testing.T) {
-	k := useFakeKeyring(t)
-	uri := "https://trino.example.com"
-
-	cache, err := getTokenCache(uri, false, nil)
-	require.NoError(t, err)
-	cache.SetToken("token-1")
-	assert.Empty(t, k.entries)
-
-	again, err := getTokenCache(uri, false, nil)
-	require.NoError(t, err)
-	assert.Equal(t, "token-1", again.Token())
-
-	keyringCache, err := getTokenCache(uri, true, nil)
-	require.NoError(t, err)
-	assert.NotSame(t, cache, keyringCache)
-}
-
-func TestTokenCacheKeyringUnavailable(t *testing.T) {
-	k := useFakeKeyring(t)
-	k.err = errors.New("no secret service")
-
-	cache, err := getTokenCache("https://trino.example.com", true, nil)
-	require.NoError(t, err)
-	assert.Equal(t, "", cache.Token())
-	cache.SetToken("token-1")
-	assert.Equal(t, "token-1", cache.Token())
+	_, err := (&TrinoDBFactory{}).tokenCache("https://%zz", tokenCacheMemory, nil)
+	require.ErrorContains(t, err, "could not parse Trino server URI")
 }
 
 func TestExternalAuthOptions(t *testing.T) {
@@ -243,32 +141,63 @@ func TestExternalAuthOptions(t *testing.T) {
 	}
 }
 
-// bufferLogger returns a logger whose output the test can inspect.
-func bufferLogger() (*slog.Logger, *bytes.Buffer) {
-	var buf bytes.Buffer
-	return slog.New(slog.NewTextHandler(&buf, nil)), &buf
+func TestTokenCacheSharedPerServerAndUser(t *testing.T) {
+	f := &TrinoDBFactory{keyring: newMemoryKeyring()}
+	cache := func(uri, mode string) *tokenCache {
+		c, err := f.tokenCache(uri, mode, nil)
+		require.NoError(t, err)
+		return c
+	}
+
+	alice := cache("https://alice@trino.example.com", tokenCacheKeyring)
+	assert.Same(t, alice, cache("https://alice@trino.example.com:443", tokenCacheKeyring))
+	assert.NotSame(t, alice, cache("https://bob@trino.example.com", tokenCacheKeyring))
+	assert.NotSame(t, alice, cache("https://alice@trino.example.com", tokenCacheMemory), "the memory cache is kept apart")
 }
 
-func TestTokenCacheInvalidServerURI(t *testing.T) {
-	useFakeKeyring(t)
-	_, err := getTokenCache("https://%zz", true, nil)
-	require.ErrorContains(t, err, "could not parse Trino server URI")
+func TestTokenCacheKeyringChunksLargeTokens(t *testing.T) {
+	k := newMemoryKeyring()
+	const uri = "https://trino.example.com"
+	const key = keyringService + "/https://trino.example.com:443"
+	token := strings.Repeat("abcdefghij", 450) // 4500 bytes, like an Entra ID token
+
+	cache, err := (&TrinoDBFactory{keyring: k}).tokenCache(uri, tokenCacheKeyring, nil)
+	require.NoError(t, err)
+	cache.SetToken(token)
+	assert.Equal(t, keyringChunksPrefix+"5", k.entries[key])
+	assert.Len(t, k.entries, 6, "5 chunks and their count")
+
+	// A new process reads the chunks back.
+	cache, err = (&TrinoDBFactory{keyring: k}).tokenCache(uri, tokenCacheKeyring, nil)
+	require.NoError(t, err)
+	assert.Equal(t, token, cache.Token())
+
+	cache.SetToken("small-token")
+	assert.Equal(t, map[string]string{key: "small-token"}, k.entries, "the chunks are removed")
 }
 
-func TestTokenCacheKeyringChunkWriteFails(t *testing.T) {
-	k := useFakeKeyring(t)
-	k.maxSize = 10 // smaller than a chunk, so the chunks cannot be saved either
+func TestTokenCacheKeyringUnavailable(t *testing.T) {
+	k := newMemoryKeyring()
+	k.err = errors.New("no secret service")
 	logger, logs := bufferLogger()
 
-	cache, err := getTokenCache("https://trino.example.com", true, logger)
+	cache, err := (&TrinoDBFactory{keyring: k}).tokenCache("https://trino.example.com", tokenCacheKeyring, logger)
 	require.NoError(t, err)
-	cache.SetToken("a-token-over-ten-bytes")
-	assert.Equal(t, "a-token-over-ten-bytes", cache.Token(), "the token is still kept in memory")
-	assert.NotContains(t, k.entries, keyringService+"/https://trino.example.com:443")
-	assert.Contains(t, logs.String(), "could not save the Trino token to the keyring")
+	assert.Equal(t, "", cache.Token())
+	token := strings.Repeat("abcdefghij", 450)
+	cache.SetToken(token)
+	assert.Equal(t, token, cache.Token(), "the token is still reused within the process")
+	for _, warning := range []string{
+		"could not read the Trino token from the keyring",
+		"could not remove the Trino token from the keyring",
+		"could not save the Trino token to the keyring",
+	} {
+		assert.Contains(t, logs.String(), warning)
+	}
 }
 
-func TestTokenCacheKeyringCorruptChunks(t *testing.T) {
+// A process that stops while saving a token in chunks leaves them incomplete.
+func TestTokenCacheKeyringIncompleteToken(t *testing.T) {
 	const key = keyringService + "/https://trino.example.com:443"
 	for _, tc := range []struct {
 		name    string
@@ -287,13 +216,13 @@ func TestTokenCacheKeyringCorruptChunks(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			k := useFakeKeyring(t)
+			k := newMemoryKeyring()
 			maps.Copy(k.entries, tc.entries)
 			logger, logs := bufferLogger()
 
-			cache, err := getTokenCache("https://trino.example.com", true, logger)
+			cache, err := (&TrinoDBFactory{keyring: k}).tokenCache("https://trino.example.com", tokenCacheKeyring, logger)
 			require.NoError(t, err)
-			assert.Equal(t, "", cache.Token(), "a corrupt token is not used, so the user logs in again")
+			assert.Equal(t, "", cache.Token(), "the user logs in again")
 			assert.Contains(t, logs.String(), tc.warning)
 
 			cache.SetToken("new-token")
@@ -302,188 +231,68 @@ func TestTokenCacheKeyringCorruptChunks(t *testing.T) {
 	}
 }
 
-// useOSKeyring uses the OS keyring for the duration of the test, and skips
-// it when there is none (e.g. Linux without a Secret Service).
-func useOSKeyring(t *testing.T) {
+// osKeyringOrSkip returns the OS keyring, and skips the test when there is
+// none (e.g. Linux without a Secret Service).
+func osKeyringOrSkip(t *testing.T) keyringBackend {
 	t.Helper()
 	probe := "probe-" + rand.Text()
 	if err := keyring.Set(keyringService, probe, "probe"); err != nil {
 		t.Skipf("no OS keyring available: %v", err)
 	}
 	require.NoError(t, keyring.Delete(keyringService, probe))
-	saved := systemKeyring
-	systemKeyring = osKeyring{}
-	resetTokenCaches()
-	t.Cleanup(func() {
-		systemKeyring = saved
-		resetTokenCaches()
-	})
+	return osKeyring{}
 }
 
-// forgetOSKeyringToken removes what the tests saved in the OS keyring for key.
-func forgetOSKeyringToken(t *testing.T, key string) {
+// forgetToken removes the token saved for key from k, now and after the test.
+func forgetToken(t *testing.T, k keyringBackend, key string) {
 	t.Helper()
-	t.Cleanup(func() {
-		_ = (&tokenCache{key: key}).delete()
-	})
+	forget := func() { _ = (&tokenCache{key: key, keyring: k}).delete() }
+	forget()
+	t.Cleanup(forget)
 }
 
 func TestTokenCacheOSKeyring(t *testing.T) {
-	useOSKeyring(t)
+	k := osKeyringOrSkip(t)
 	// A server of its own, so the test never touches a real token.
 	uri := "https://" + strings.ToLower(rand.Text()) + ".adbc-test.invalid"
 	key, err := tokenCacheKey(uri)
 	require.NoError(t, err)
-	forgetOSKeyringToken(t, key)
+	forgetToken(t, k, key)
 
-	// 4500 bytes, over the Windows and macOS limits, so it is saved in chunks
-	// there.
 	for _, token := range []string{"small-token", strings.Repeat("abcdefghij", 450)} {
-		cache, err := getTokenCache(uri, true, nil)
+		cache, err := (&TrinoDBFactory{keyring: k}).tokenCache(uri, tokenCacheKeyring, nil)
 		require.NoError(t, err)
 		cache.SetToken(token)
 
-		resetTokenCaches()
-		cache, err = getTokenCache(uri, true, nil)
+		cache, err = (&TrinoDBFactory{keyring: k}).tokenCache(uri, tokenCacheKeyring, nil)
 		require.NoError(t, err)
 		assert.Equal(t, token, cache.Token(), "a new process reads the token from the OS keyring")
 	}
 
-	cache, err := getTokenCache(uri, true, nil)
+	cache, err := (&TrinoDBFactory{keyring: k}).tokenCache(uri, tokenCacheKeyring, nil)
 	require.NoError(t, err)
 	cache.SetToken("")
-	_, err = keyring.Get(keyringService, key)
-	require.ErrorIs(t, err, keyring.ErrNotFound)
-	for i := range 5 {
-		_, err = keyring.Get(keyringService, chunkKey(key, i))
-		require.ErrorIs(t, err, keyring.ErrNotFound, "chunk %d", i)
+	for _, user := range []string{key, chunkKey(key, 0), chunkKey(key, 4)} {
+		_, err = keyring.Get(keyringService, user)
+		require.ErrorIs(t, err, keyring.ErrNotFound, user)
 	}
 }
 
-// trinoOAuth2DSN returns the URI of the local Trino with OAuth 2.0 (see
-// compose.yaml), and makes the driver log in through it without a browser.
-// It returns the number of logins.
-func trinoOAuth2DSN(t *testing.T) (string, *atomic.Int32) {
-	t.Helper()
-	dsn := os.Getenv("TRINO_OAUTH2_DSN")
-	if dsn == "" {
-		t.Skip("Set TRINO_OAUTH2_DSN environment variable for OAuth 2.0 tests")
-	}
-	ca, err := os.ReadFile(os.Getenv("TRINO_SSL_CERT_PATH"))
-	require.NoError(t, err, "TRINO_SSL_CERT_PATH must point to the CA of the local Trino")
-	roots := x509.NewCertPool()
-	require.True(t, roots.AppendCertsFromPEM(ca))
-
-	var logins atomic.Int32
-	saved := externalAuthRedirectHandler
-	externalAuthRedirectHandler = func(ctx context.Context, redirectURL *url.URL) error {
-		logins.Add(1)
-		// Act as the browser: follow the redirects to the identity provider,
-		// which logs in without a login page, and back to Trino.
-		jar, err := cookiejar.New(nil)
-		if err != nil {
-			return err
-		}
-		browser := &http.Client{Jar: jar, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots}}}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, redirectURL.String(), nil)
-		if err != nil {
-			return err
-		}
-		resp, err := browser.Do(req)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("login ended with %s at %s", resp.Status, resp.Request.URL)
-		}
-		return nil
-	}
-	t.Cleanup(func() { externalAuthRedirectHandler = saved })
-	return dsn, &logins
-}
-
-// queryCurrentUser opens a database and runs a query, as a new connection
-// of a client (e.g. dbt) does.
-func queryCurrentUser(t *testing.T, dsn string, opts map[string]string) {
-	t.Helper()
-	all := map[string]string{adbc.OptionKeyURI: dsn}
-	maps.Copy(all, opts)
-	db, err := NewTrinoDBFactory().CreateDB(context.Background(), "trino", all, nil)
-	require.NoError(t, err)
-	defer func() { require.NoError(t, db.Close()) }()
-	var user string
-	require.NoError(t, db.QueryRowContext(context.Background(), "SELECT current_user").Scan(&user))
-	assert.Equal(t, "oauth-user", user, "the user of the identity provider")
-}
-
-func TestTrinoOAuth2ReusesToken(t *testing.T) {
-	dsn, logins := trinoOAuth2DSN(t)
-	k := useFakeKeyring(t)
-
-	queryCurrentUser(t, dsn, nil)
-	queryCurrentUser(t, dsn, nil)
-	assert.Equal(t, int32(1), logins.Load(), "databases in one process share the token")
-	assert.Len(t, k.entries, 1)
-
-	resetTokenCaches()
-	queryCurrentUser(t, dsn, nil)
-	assert.Equal(t, int32(1), logins.Load(), "a new process reuses the token from the keyring")
-}
-
-func TestTrinoOAuth2MemoryTokenCache(t *testing.T) {
-	dsn, logins := trinoOAuth2DSN(t)
-	k := useFakeKeyring(t)
-	opts := map[string]string{optionTokenCache: tokenCacheMemory}
-
-	queryCurrentUser(t, dsn, opts)
-	queryCurrentUser(t, dsn, opts)
-	assert.Equal(t, int32(1), logins.Load())
-	assert.Empty(t, k.entries)
-
-	resetTokenCaches()
-	queryCurrentUser(t, dsn, opts)
-	assert.Equal(t, int32(2), logins.Load(), "the token does not outlive the process")
-}
-
-func TestTrinoOAuth2ReplacesRejectedToken(t *testing.T) {
-	dsn, logins := trinoOAuth2DSN(t)
-	k := useFakeKeyring(t)
-	cfg, err := trino.ParseDSN(dsn)
-	require.NoError(t, err)
-	key, err := tokenCacheKey(cfg.ServerURI)
-	require.NoError(t, err)
-	k.entries[keyringService+"/"+key] = "expired-token"
-
-	queryCurrentUser(t, dsn, nil)
-	assert.Equal(t, int32(1), logins.Load())
-	assert.NotEqual(t, "expired-token", k.entries[keyringService+"/"+key])
-	assert.NotEmpty(t, k.entries[keyringService+"/"+key])
-}
-
-func TestTrinoOAuth2OSKeyring(t *testing.T) {
-	dsn, logins := trinoOAuth2DSN(t)
-	useOSKeyring(t)
-	cfg, err := trino.ParseDSN(dsn)
-	require.NoError(t, err)
-	key, err := tokenCacheKey(cfg.ServerURI)
-	require.NoError(t, err)
-	// Start from no token, and do not leave the test's token behind.
-	_ = (&tokenCache{key: key}).delete()
-	forgetOSKeyringToken(t, key)
-
-	queryCurrentUser(t, dsn, nil)
-	assert.Equal(t, int32(1), logins.Load())
-
-	resetTokenCaches()
-	queryCurrentUser(t, dsn, nil)
-	assert.Equal(t, int32(1), logins.Load(), "a new process reuses the token from the OS keyring")
+func TestDatabaseInvalidOption(t *testing.T) {
+	_, err := NewDriver(memory.DefaultAllocator).NewDatabaseWithContext(context.Background(), map[string]string{
+		adbc.OptionKeyURI: "trino://trino.example.com/memory",
+		optionTokenCache:  "disk",
+	})
+	var adbcErr adbc.Error
+	require.ErrorAs(t, err, &adbcErr)
+	assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
+	assert.ErrorContains(t, err, `invalid value for trino.token_cache: "disk"`)
 }
 
 // openDatabase opens a database through the ADBC driver.
-func openDatabase(t *testing.T, opts map[string]string) adbc.DatabaseWithContext {
+func openDatabase(t *testing.T, f *TrinoDBFactory, opts map[string]string) adbc.DatabaseWithContext {
 	t.Helper()
-	db, err := NewDriver(memory.DefaultAllocator).NewDatabaseWithContext(context.Background(), opts)
+	db, err := newDriver(memory.DefaultAllocator, f).NewDatabaseWithContext(context.Background(), opts)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close(context.Background())) })
 	return db
@@ -507,37 +316,173 @@ func assertDatabaseOptions(t *testing.T, db adbc.DatabaseWithContext, externalAu
 	assert.Equal(t, adbc.StatusNotFound, adbcErr.Code)
 }
 
-func TestDatabaseInvalidOption(t *testing.T) {
-	_, err := NewDriver(memory.DefaultAllocator).NewDatabaseWithContext(context.Background(), map[string]string{
-		adbc.OptionKeyURI: "trino://trino.example.com/memory",
-		optionTokenCache:  "disk",
-	})
-	var adbcErr adbc.Error
-	require.ErrorAs(t, err, &adbcErr)
-	assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
-	assert.ErrorContains(t, err, `invalid value for trino.token_cache: "disk"`)
-}
-
 func TestDatabaseOptionsDefaults(t *testing.T) {
 	dsn := os.Getenv("TRINO_DSN")
 	if dsn == "" {
 		t.Skip("Set TRINO_DSN environment variable")
 	}
-	db := openDatabase(t, map[string]string{adbc.OptionKeyURI: dsn})
+	db := openDatabase(t, NewTrinoDBFactory(), map[string]string{adbc.OptionKeyURI: dsn})
 	assertDatabaseOptions(t, db, "false", tokenCacheKeyring)
 }
 
+// trinoOAuth2 returns the URI of the local Trino with OAuth 2.0 (see
+// compose.yaml), and a redirect handler that logs in through it as a browser
+// would, counting the logins.
+func trinoOAuth2(t *testing.T) (string, trino.RedirectHandler, *atomic.Int32) {
+	t.Helper()
+	dsn := os.Getenv("TRINO_OAUTH2_DSN")
+	if dsn == "" {
+		t.Skip("Set TRINO_OAUTH2_DSN environment variable for OAuth 2.0 tests")
+	}
+	ca, err := os.ReadFile(os.Getenv("TRINO_SSL_CERT_PATH"))
+	require.NoError(t, err, "TRINO_SSL_CERT_PATH must point to the CA of the local Trino")
+	roots := x509.NewCertPool()
+	require.True(t, roots.AppendCertsFromPEM(ca))
+
+	var logins atomic.Int32
+	browser := func(ctx context.Context, redirectURL *url.URL) error {
+		logins.Add(1)
+		// Follow the redirects to the identity provider, which logs in
+		// without a login page, and back to Trino.
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			return err
+		}
+		client := &http.Client{Jar: jar, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots}}}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, redirectURL.String(), nil)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("login ended with %s at %s", resp.Status, resp.Request.URL)
+		}
+		return nil
+	}
+	return dsn, browser, &logins
+}
+
+// queryCurrentUser opens a database and runs a query, as a new connection
+// of a client (e.g. dbt) does. It returns an error rather than failing the
+// test, so that it can run outside of the test's goroutine.
+func queryCurrentUser(f *TrinoDBFactory, dsn string, opts map[string]string) error {
+	all := map[string]string{adbc.OptionKeyURI: dsn}
+	maps.Copy(all, opts)
+	db, err := f.CreateDB(context.Background(), "trino", all, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+	var user string
+	if err := db.QueryRowContext(context.Background(), "SELECT current_user").Scan(&user); err != nil {
+		return err
+	}
+	if user != "oauth-user" {
+		return fmt.Errorf("logged in as %q instead of the identity provider's user", user)
+	}
+	return nil
+}
+
+// tokenKey returns the token cache key of the server of dsn.
+func tokenKey(t *testing.T, dsn string) string {
+	t.Helper()
+	cfg, err := trino.ParseDSN(dsn)
+	require.NoError(t, err)
+	key, err := tokenCacheKey(cfg.ServerURI)
+	require.NoError(t, err)
+	return key
+}
+
+func TestTrinoOAuth2ReusesToken(t *testing.T) {
+	dsn, browser, logins := trinoOAuth2(t)
+	k := newMemoryKeyring()
+	f := &TrinoDBFactory{keyring: k, redirect: browser}
+
+	require.NoError(t, queryCurrentUser(f, dsn, nil))
+	// Other options, hence another Connector, still reuse the token.
+	require.NoError(t, queryCurrentUser(f, dsn, map[string]string{"trino.http_header.X-Trino-Client-Tags": "adbc-test"}))
+	assert.Equal(t, int32(1), logins.Load(), "databases in one process share the token")
+	assert.NotEmpty(t, k.entries[keyringService+"/"+tokenKey(t, dsn)])
+
+	newProcess := &TrinoDBFactory{keyring: k, redirect: browser}
+	require.NoError(t, queryCurrentUser(newProcess, dsn, nil))
+	assert.Equal(t, int32(1), logins.Load(), "a new process reuses the token from the keyring")
+}
+
+func TestTrinoOAuth2ConcurrentLogin(t *testing.T) {
+	dsn, browser, logins := trinoOAuth2(t)
+	// The login takes a while, as with a user in front of the browser, so
+	// that all the databases ask for it before it ends.
+	slowBrowser := func(ctx context.Context, redirectURL *url.URL) error {
+		time.Sleep(time.Second)
+		return browser(ctx, redirectURL)
+	}
+	f := &TrinoDBFactory{keyring: newMemoryKeyring(), redirect: slowBrowser}
+
+	var wg sync.WaitGroup
+	errs := make([]error, 4)
+	for i := range errs {
+		wg.Go(func() { errs[i] = queryCurrentUser(f, dsn, nil) })
+	}
+	wg.Wait()
+	require.NoError(t, errors.Join(errs...))
+	assert.Equal(t, int32(1), logins.Load(), "databases connecting at once wait for one login")
+}
+
+func TestTrinoOAuth2MemoryTokenCache(t *testing.T) {
+	dsn, browser, logins := trinoOAuth2(t)
+	k := newMemoryKeyring()
+	opts := map[string]string{optionTokenCache: tokenCacheMemory}
+	f := &TrinoDBFactory{keyring: k, redirect: browser}
+
+	require.NoError(t, queryCurrentUser(f, dsn, opts))
+	require.NoError(t, queryCurrentUser(f, dsn, opts))
+	assert.Equal(t, int32(1), logins.Load())
+	assert.Empty(t, k.entries, "the keyring is not used")
+
+	newProcess := &TrinoDBFactory{keyring: k, redirect: browser}
+	require.NoError(t, queryCurrentUser(newProcess, dsn, opts))
+	assert.Equal(t, int32(2), logins.Load(), "the token does not outlive the process")
+}
+
+func TestTrinoOAuth2ReplacesRejectedToken(t *testing.T) {
+	dsn, browser, logins := trinoOAuth2(t)
+	k := newMemoryKeyring()
+	key := keyringService + "/" + tokenKey(t, dsn)
+	k.entries[key] = "expired-token"
+
+	require.NoError(t, queryCurrentUser(&TrinoDBFactory{keyring: k, redirect: browser}, dsn, nil))
+	assert.Equal(t, int32(1), logins.Load())
+	assert.NotContains(t, []string{"", "expired-token"}, k.entries[key])
+}
+
 func TestTrinoOAuth2Option(t *testing.T) {
-	dsn, logins := trinoOAuth2DSN(t)
-	useFakeKeyring(t)
+	dsn, browser, logins := trinoOAuth2(t)
+	f := &TrinoDBFactory{keyring: newMemoryKeyring(), redirect: browser}
 	// The option enables external authentication without the URI parameter.
+	uri := strings.Replace(dsn, "&externalAuthentication=true", "", 1)
 	opts := map[string]string{
-		adbc.OptionKeyURI:            strings.Replace(dsn, "&externalAuthentication=true", "", 1),
+		adbc.OptionKeyURI:            uri,
 		optionExternalAuthentication: "true",
 		optionTokenCache:             tokenCacheMemory,
 	}
 
-	assertDatabaseOptions(t, openDatabase(t, opts), "true", tokenCacheMemory)
-	queryCurrentUser(t, opts[adbc.OptionKeyURI], opts)
+	assertDatabaseOptions(t, openDatabase(t, f, opts), "true", tokenCacheMemory)
+	require.NoError(t, queryCurrentUser(f, uri, opts))
 	assert.Equal(t, int32(1), logins.Load())
+}
+
+func TestTrinoOAuth2OSKeyring(t *testing.T) {
+	dsn, browser, logins := trinoOAuth2(t)
+	k := osKeyringOrSkip(t)
+	forgetToken(t, k, tokenKey(t, dsn))
+
+	require.NoError(t, queryCurrentUser(&TrinoDBFactory{keyring: k, redirect: browser}, dsn, nil))
+	newProcess := &TrinoDBFactory{keyring: k, redirect: browser}
+	require.NoError(t, queryCurrentUser(newProcess, dsn, nil))
+	assert.Equal(t, int32(1), logins.Load(), "a new process reuses the token from the OS keyring")
 }

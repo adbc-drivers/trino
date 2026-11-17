@@ -38,7 +38,16 @@ import (
 
 // TrinoDBFactory provides Trino-specific database connection creation.
 // It handles Trino DSN formatting and connection parameters.
-type TrinoDBFactory struct{}
+type TrinoDBFactory struct {
+	// keyring keeps the external authentication tokens for later processes.
+	keyring keyringBackend
+	// redirect sends the user to log in; nil opens the default browser.
+	redirect trino.RedirectHandler
+	// connectors holds a Connector per configuration with external
+	// authentication, and tokenCaches a token cache per server and user.
+	connectors  sync.Map
+	tokenCaches sync.Map
+}
 
 type customClientRegistration struct {
 	mu         sync.Mutex
@@ -47,15 +56,11 @@ type customClientRegistration struct {
 
 var (
 	customClientRegistrations sync.Map
-
-	// externalAuthRedirectHandler sends the user to the external
-	// authentication URL. nil opens the default browser. Replaced in tests.
-	externalAuthRedirectHandler trino.RedirectHandler
 )
 
 // NewTrinoDBFactory creates a new TrinoDBFactory.
 func NewTrinoDBFactory() *TrinoDBFactory {
-	return &TrinoDBFactory{}
+	return &TrinoDBFactory{keyring: osKeyring{}}
 }
 
 // CreateDB creates a *sql.DB using sql.Open with a Trino-specific DSN.
@@ -75,23 +80,14 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 		return nil, err
 	}
 	cfg.ExternalAuthentication = externalAuth
-	if !cfg.ExternalAuthentication {
-		dsn, err := cfg.FormatDSN()
-		if err != nil {
-			return nil, err
-		}
-		return sql.Open(driverName, dsn)
-	}
-
-	// A TokenCache cannot be expressed in a DSN, so open the database from a
-	// Connector that shares the token with the other databases of the process
-	// and, by default, with later processes through the OS keyring.
-	cfg.TokenCache, err = getTokenCache(cfg.ServerURI, tokenCache == tokenCacheKeyring, logger)
+	dsn, err = cfg.FormatDSN()
 	if err != nil {
 		return nil, err
 	}
-	cfg.RedirectHandler = externalAuthRedirectHandler
-	connector, err := trino.NewConnector(cfg)
+	if !externalAuth {
+		return sql.Open(driverName, dsn)
+	}
+	connector, err := f.externalAuthConnector(cfg, dsn, tokenCache, logger)
 	if err != nil {
 		return nil, err
 	}

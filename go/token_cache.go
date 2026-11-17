@@ -67,19 +67,12 @@ func (osKeyring) Set(service, user, password string) error {
 func (osKeyring) Get(service, user string) (string, error) { return keyring.Get(service, user) }
 func (osKeyring) Delete(service, user string) error        { return keyring.Delete(service, user) }
 
-// systemKeyring is replaced in tests.
-var systemKeyring keyringBackend = osKeyring{}
-
-// tokenCaches holds one cache per server and user, so that every database
-// in the process reuses the same token instead of logging in again.
-var tokenCaches sync.Map
-
 // tokenCache implements trino.TokenCache. The token is kept in memory, since
-// the client reads it for every request, and written through to the keyring
-// when persist is set.
+// the client reads it for every request, and written through to keyring
+// unless it is nil.
 type tokenCache struct {
 	key     string
-	persist bool
+	keyring keyringBackend
 	logger  *slog.Logger
 
 	mu     sync.Mutex
@@ -111,23 +104,49 @@ func externalAuthOptions(opts map[string]string) (externalAuth bool, tokenCache 
 	return externalAuth, tokenCache, nil
 }
 
-// getTokenCache returns the process-wide cache for the server and user of
-// serverURI, which also keeps the token in the OS keyring when persist is set.
-func getTokenCache(serverURI string, persist bool, logger *slog.Logger) (*tokenCache, error) {
+// externalAuthConnector returns the Connector for cfg, which keeps its token
+// as tokenCacheMode says. A TokenCache cannot be expressed in a DSN, so the
+// database is opened from a Connector rather than from dsn, which only
+// identifies the configuration. Databases with the same configuration (e.g.
+// the threads of dbt) share the Connector, so that while one logs in, the
+// others wait for its token rather than also opening the browser.
+func (f *TrinoDBFactory) externalAuthConnector(cfg *trino.Config, dsn, tokenCacheMode string, logger *slog.Logger) (*trino.Connector, error) {
+	key := tokenCacheMode + "|" + dsn
+	if connector, ok := f.connectors.Load(key); ok {
+		return connector.(*trino.Connector), nil
+	}
+	var err error
+	cfg.TokenCache, err = f.tokenCache(cfg.ServerURI, tokenCacheMode, logger)
+	if err != nil {
+		return nil, err
+	}
+	cfg.RedirectHandler = f.redirect
+	connector, err := trino.NewConnector(cfg)
+	if err != nil {
+		return nil, err
+	}
+	shared, _ := f.connectors.LoadOrStore(key, connector)
+	return shared.(*trino.Connector), nil
+}
+
+// tokenCache returns the cache for the server and user of serverURI, which
+// databases with other configurations share too, so that they reuse the
+// token instead of logging in again.
+func (f *TrinoDBFactory) tokenCache(serverURI, mode string, logger *slog.Logger) (*tokenCache, error) {
 	key, err := tokenCacheKey(serverURI)
 	if err != nil {
 		return nil, err
 	}
-	if logger == nil {
-		logger = slog.Default()
+	cache := &tokenCache{key: key, logger: logger}
+	if cache.logger == nil {
+		cache.logger = slog.Default()
 	}
-	// Memory and keyring caches for the same server are kept apart, so that
-	// a database that opted out of the keyring never writes to it.
-	cache, _ := tokenCaches.LoadOrStore(
-		fmt.Sprintf("persist=%t|%s", persist, key),
-		&tokenCache{key: key, persist: persist, logger: logger},
-	)
-	return cache.(*tokenCache), nil
+	// The memory cache never writes to the keyring.
+	if mode == tokenCacheKeyring {
+		cache.keyring = f.keyring
+	}
+	shared, _ := f.tokenCaches.LoadOrStore(mode+"|"+key, cache)
+	return shared.(*tokenCache), nil
 }
 
 // tokenCacheKey identifies the server and user a token belongs to.
@@ -152,7 +171,7 @@ func (c *tokenCache) Token() string {
 	defer c.mu.Unlock()
 	if !c.loaded {
 		c.loaded = true
-		if c.persist {
+		if c.keyring != nil {
 			token, err := c.load()
 			if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 				c.logger.Warn("could not read the Trino token from the keyring", "error", err)
@@ -170,7 +189,7 @@ func (c *tokenCache) SetToken(token string) {
 	defer c.mu.Unlock()
 	c.token = token
 	c.loaded = true
-	if !c.persist {
+	if c.keyring == nil {
 		return
 	}
 	if err := c.delete(); err != nil && !errors.Is(err, keyring.ErrNotFound) {
@@ -190,21 +209,21 @@ func (c *tokenCache) SetToken(token string) {
 // process it started running when it rejects them.
 func (c *tokenCache) store(token string) error {
 	if len(token) <= keyringChunkSize {
-		return systemKeyring.Set(keyringService, c.key, token)
+		return c.keyring.Set(keyringService, c.key, token)
 	}
 	n := 0
 	for start := 0; start < len(token); start += keyringChunkSize {
 		chunk := token[start:min(start+keyringChunkSize, len(token))]
-		if err := systemKeyring.Set(keyringService, chunkKey(c.key, n), chunk); err != nil {
+		if err := c.keyring.Set(keyringService, chunkKey(c.key, n), chunk); err != nil {
 			return err
 		}
 		n++
 	}
-	return systemKeyring.Set(keyringService, c.key, keyringChunksPrefix+strconv.Itoa(n))
+	return c.keyring.Set(keyringService, c.key, keyringChunksPrefix+strconv.Itoa(n))
 }
 
 func (c *tokenCache) load() (string, error) {
-	value, err := systemKeyring.Get(keyringService, c.key)
+	value, err := c.keyring.Get(keyringService, c.key)
 	if err != nil {
 		return "", err
 	}
@@ -217,7 +236,7 @@ func (c *tokenCache) load() (string, error) {
 	}
 	var b strings.Builder
 	for i := range n {
-		chunk, err := systemKeyring.Get(keyringService, chunkKey(c.key, i))
+		chunk, err := c.keyring.Get(keyringService, chunkKey(c.key, i))
 		if err != nil {
 			// Not wrapped: a missing chunk is a corrupt token, which is
 			// reported, rather than no token.
@@ -229,16 +248,16 @@ func (c *tokenCache) load() (string, error) {
 }
 
 func (c *tokenCache) delete() error {
-	value, err := systemKeyring.Get(keyringService, c.key)
+	value, err := c.keyring.Get(keyringService, c.key)
 	if err != nil {
 		return err
 	}
 	if n, chunked, err := chunkCount(value); err == nil && chunked {
 		for i := range n {
-			_ = systemKeyring.Delete(keyringService, chunkKey(c.key, i))
+			_ = c.keyring.Delete(keyringService, chunkKey(c.key, i))
 		}
 	}
-	return systemKeyring.Delete(keyringService, c.key)
+	return c.keyring.Delete(keyringService, c.key)
 }
 
 func chunkKey(key string, i int) string {

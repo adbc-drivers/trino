@@ -706,8 +706,12 @@ func (d *trinoDriver) NewDatabaseWithContext(ctx context.Context, opts map[strin
 
 // NewDriver constructs the ADBC Driver for "trino".
 func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
+	return newDriver(alloc, NewTrinoDBFactory())
+}
+
+func newDriver(alloc memory.Allocator, dbFactory *TrinoDBFactory) driverbase.DriverWithContext {
 	factory := &trinoConnectionFactory{}
-	driver := sqlwrapper.NewDriver(alloc, "trino", vendorName, NewTrinoDBFactory()).
+	driver := sqlwrapper.NewDriver(alloc, "trino", vendorName, dbFactory).
 		WithDatabaseFactory(factory).
 		WithConnectionFactory(factory).
 		WithStatementFactory(factory).
