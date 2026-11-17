@@ -69,13 +69,13 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 	if err != nil {
 		return nil, err
 	}
-	externalAuth, tokenCache, err := externalAuthOptions(opts)
-	if err != nil {
-		return nil, err
-	}
 
 	// Register custom HTTP client to prevent infrastructure timeouts
 	cfg, err := f.registerCustomClientForTimeout(dsn, opts)
+	if err != nil {
+		return nil, err
+	}
+	externalAuth, tokenCache, err := externalAuthOptions(opts)
 	if err != nil {
 		return nil, err
 	}

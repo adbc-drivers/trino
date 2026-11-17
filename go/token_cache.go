@@ -25,8 +25,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/adbc-drivers/driverbase-go/driverbase"
-	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/trinodb/trino-go-client/trino"
 	"github.com/zalando/go-keyring"
 )
@@ -91,11 +89,16 @@ func externalAuthOptions(opts map[string]string) (externalAuth bool, tokenCache 
 	}
 	value, ok := opts[optionExternalAuthentication]
 	if !ok {
-		u, err := driverbase.SafeParseURL(opts[adbc.OptionKeyURI])
+		// Read the URI parameter as the client does, from the DSN.
+		dsn, err := (&TrinoDBFactory{}).BuildTrinoDSN(opts)
 		if err != nil {
 			return false, "", err
 		}
-		value = cmp.Or(u.Query().Get("externalAuthentication"), "false")
+		cfg, err := trino.ParseDSN(dsn)
+		if err != nil {
+			return false, "", err
+		}
+		return cfg.ExternalAuthentication, tokenCache, nil
 	}
 	externalAuth, err = strconv.ParseBool(value)
 	if err != nil {
