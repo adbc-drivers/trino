@@ -135,6 +135,19 @@ digits are truncated to nanoseconds.
 
   For example, set `trino.http_header.X-Trino-Client-Tags` on a statement to replace the connection's client tags (from `clientTags` in the URI) for this statement's queries, e.g. to select a [resource group](https://trino.io/docs/current/admin/resource-groups.html).
 
+`trino.external_authentication`
+: **Type:** boolean. **Default:** `false`. **URI Parameter:** `externalAuthentication`
+
+  Log in through the server's OAuth 2.0 external authentication, opening the browser when the server asks for a login. If no browser can be opened, the login URL is printed to standard error, to open it in a browser.
+
+`trino.token_cache`
+: **Type:** string. **Default:** `keyring`.
+
+  Where to keep the token obtained through external authentication (`trino.external_authentication`). In both modes, all databases in the process that connect to the same server as the same user share one token, so the user logs in once rather than once per database, and databases with the same options that connect at the same time wait for a single login.
+
+  - `keyring`: also save the token in the OS keyring (macOS Keychain, Windows Credential Manager, or the Secret Service on Linux), so that later processes reuse it until the server rejects it. If no keyring is available, the token is only kept in memory.
+  - `memory`: keep the token in memory only, for the lifetime of the process.
+
 `trino.statement.last_query_id`
 : **Read-only.** **Type:** string.
 

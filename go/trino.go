@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"math/big"
 	"reflect"
@@ -636,6 +637,34 @@ func convertDecimalToTrinoNumericFromInt(value *big.Int, scale int32) trino.Nume
 // trinoConnectionFactory creates Trino connections
 type trinoConnectionFactory struct{}
 
+func (f *trinoConnectionFactory) CreateDatabase(database *sqlwrapper.DatabaseImplBase) (sqlwrapper.DatabaseImpl, error) {
+	return &trinoDatabase{DatabaseImplBase: database}, nil
+}
+
+// trinoDatabase reports the external authentication options it was created
+// with. Like the other options, they cannot be changed afterwards.
+type trinoDatabase struct {
+	*sqlwrapper.DatabaseImplBase
+	options map[string]string
+}
+
+// SetOptions is first called by trinoDriver.NewDatabaseWithContext, with the
+// effective options that CreateDB found.
+func (db *trinoDatabase) SetOptions(ctx context.Context, opts map[string]string) error {
+	if db.options != nil {
+		return db.DatabaseImplBase.SetOptions(ctx, opts)
+	}
+	db.options = opts
+	return nil
+}
+
+func (db *trinoDatabase) GetOption(ctx context.Context, key string) (string, error) {
+	if value, ok := db.options[key]; ok {
+		return value, nil
+	}
+	return db.DatabaseImplBase.GetOption(ctx, key)
+}
+
 // CreateConnection implements sqlwrapper.ConnectionFactory
 func (f *trinoConnectionFactory) CreateConnection(
 	ctx context.Context,
@@ -653,10 +682,36 @@ func (f *trinoConnectionFactory) CreateStatement(stmt *sqlwrapper.StatementImplB
 	}, nil
 }
 
+type trinoDriver struct {
+	*sqlwrapper.Driver
+}
+
+// databaseOptionsKey is the context key of the map in which CreateDB returns
+// the effective options of the database it creates, which sqlwrapper does not
+// pass to the database.
+type databaseOptionsKey struct{}
+
+func (d *trinoDriver) NewDatabaseWithContext(ctx context.Context, opts map[string]string) (adbc.DatabaseWithContext, error) {
+	options := map[string]string{}
+	db, err := d.Driver.NewDatabaseWithContext(context.WithValue(ctx, databaseOptionsKey{}, options), opts)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.SetOptions(ctx, options); err != nil {
+		return nil, errors.Join(err, db.Close(ctx))
+	}
+	return db, nil
+}
+
 // NewDriver constructs the ADBC Driver for "trino".
 func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
+	return newDriver(alloc, NewTrinoDBFactory())
+}
+
+func newDriver(alloc memory.Allocator, dbFactory *TrinoDBFactory) driverbase.DriverWithContext {
 	factory := &trinoConnectionFactory{}
-	driver := sqlwrapper.NewDriver(alloc, "trino", vendorName, NewTrinoDBFactory()).
+	driver := sqlwrapper.NewDriver(alloc, "trino", vendorName, dbFactory).
+		WithDatabaseFactory(factory).
 		WithConnectionFactory(factory).
 		WithStatementFactory(factory).
 		WithErrorInspector(TrinoErrorInspector{})
@@ -666,5 +721,5 @@ func NewDriver(alloc memory.Allocator) driverbase.DriverWithContext {
 		adbc.InfoVendorSubstrait: false,
 	})
 
-	return driver
+	return &trinoDriver{Driver: driver}
 }

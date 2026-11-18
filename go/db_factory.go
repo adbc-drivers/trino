@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -38,7 +39,18 @@ import (
 
 // TrinoDBFactory provides Trino-specific database connection creation.
 // It handles Trino DSN formatting and connection parameters.
-type TrinoDBFactory struct{}
+type TrinoDBFactory struct {
+	// keyring keeps the external authentication tokens for other databases
+	// and later processes; nil uses the OS keyring.
+	keyring keyringBackend
+	// redirect sends the user to log in; nil opens the default browser, or
+	// prints the URL when there is none.
+	redirect trino.RedirectHandler
+	// connectors holds a Connector per configuration with external
+	// authentication, and tokenCaches a token cache per server and user.
+	connectors  sync.Map
+	tokenCaches sync.Map
+}
 
 type customClientRegistration struct {
 	mu         sync.Mutex
@@ -62,20 +74,43 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 	}
 
 	// Register custom HTTP client to prevent infrastructure timeouts
-	dsn, err = f.registerCustomClientForTimeout(dsn, opts)
+	cfg, err := f.registerCustomClientForTimeout(dsn, opts)
 	if err != nil {
 		return nil, err
 	}
+	externalAuth, tokenCache, err := externalAuthOptions(opts, cfg.ExternalAuthentication)
+	if err != nil {
+		return nil, err
+	}
+	if options, ok := ctx.Value(databaseOptionsKey{}).(map[string]string); ok {
+		options[optionExternalAuthentication] = strconv.FormatBool(externalAuth)
+		options[optionTokenCache] = tokenCache
+	}
+	cfg.ExternalAuthentication = externalAuth
+	if !externalAuth {
+		dsn, err := cfg.FormatDSN()
+		if err != nil {
+			return nil, err
+		}
+		return sql.Open(driverName, dsn)
+	}
 
-	return sql.Open(driverName, dsn)
+	// A TokenCache cannot be expressed in a DSN, so the database is opened
+	// from a Connector for the configuration parsed above.
+	connector, err := f.externalAuthConnector(cfg, dsn, tokenCache, logger)
+	if err != nil {
+		return nil, err
+	}
+	return sql.OpenDB(connector), nil
 }
 
 // registerCustomClientForTimeout creates and registers a custom HTTP client
 // This prevents infrastructure/network timeouts during long-running queries
-func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[string]string) (string, error) {
+// It returns the configuration parsed from dsn, set to use that client.
+func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[string]string) (*trino.Config, error) {
 	cfg, err := trino.ParseDSN(dsn)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse DSN: %v", err)
+		return nil, fmt.Errorf("failed to parse DSN: %v", err)
 	}
 	skipVerification := cfg.SSLVerification == trino.SSLVerificationNone
 
@@ -89,7 +124,7 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 
 	tlsConfig, err := buildTLSConfig(transport.TLSClientConfig, cfg, skipVerification)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if tlsConfig != nil {
 		transport.TLSClientConfig = tlsConfig
@@ -107,7 +142,7 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 	}
 	serverURL, err := driverbase.SafeParseURL(cfg.ServerURI)
 	if err != nil {
-		return "", fmt.Errorf("could not parse Trino server URI: %w", err)
+		return nil, fmt.Errorf("could not parse Trino server URI: %w", err)
 	}
 	rt := &headerTransport{
 		base:    transport,
@@ -125,10 +160,10 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 		case strings.HasPrefix(key, optionHTTPHeaderPrefix):
 			name, err := parseHeaderOption(key, value)
 			if err != nil {
-				return "", fmt.Errorf("invalid option %s: %w", key, err)
+				return nil, fmt.Errorf("invalid option %s: %w", key, err)
 			}
 			if seenHeaders[name] {
-				return "", fmt.Errorf("invalid option %s: HTTP header %s is set more than once", key, name)
+				return nil, fmt.Errorf("invalid option %s: HTTP header %s is set more than once", key, name)
 			}
 			seenHeaders[name] = true
 			// As for statement options, an empty value means the header is not set.
@@ -151,7 +186,7 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 		Transport: rt,
 	}
 	if err := ensureCustomClientRegistered(httpClientName.String(), customClient); err != nil {
-		return "", fmt.Errorf("failed to register custom HTTP client: %v", err)
+		return nil, fmt.Errorf("failed to register custom HTTP client: %v", err)
 	}
 
 	cfg.CustomClientName = httpClientName.String()
@@ -164,7 +199,7 @@ func (f *TrinoDBFactory) registerCustomClientForTimeout(dsn string, opts map[str
 	cfg.SSLClientKey = ""
 	cfg.SSLVerification = ""
 
-	return cfg.FormatDSN()
+	return cfg, nil
 }
 
 func buildTLSConfig(base *tls.Config, cfg *trino.Config, skipVerification bool) (*tls.Config, error) {
