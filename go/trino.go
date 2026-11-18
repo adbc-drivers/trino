@@ -649,19 +649,12 @@ type trinoDatabase struct {
 }
 
 // SetOptions is first called by trinoDriver.NewDatabaseWithContext, with the
-// options the database was created with.
+// effective options that CreateDB found.
 func (db *trinoDatabase) SetOptions(ctx context.Context, opts map[string]string) error {
 	if db.options != nil {
 		return db.DatabaseImplBase.SetOptions(ctx, opts)
 	}
-	externalAuth, tokenCache, err := externalAuthOptions(opts)
-	if err != nil {
-		return db.ErrorHelper.WrapInvalidArgument(err, "invalid option")
-	}
-	db.options = map[string]string{
-		optionExternalAuthentication: strconv.FormatBool(externalAuth),
-		optionTokenCache:             tokenCache,
-	}
+	db.options = opts
 	return nil
 }
 
@@ -693,12 +686,18 @@ type trinoDriver struct {
 	*sqlwrapper.Driver
 }
 
+// databaseOptionsKey is the context key of the map in which CreateDB returns
+// the effective options of the database it creates, which sqlwrapper does not
+// pass to the database.
+type databaseOptionsKey struct{}
+
 func (d *trinoDriver) NewDatabaseWithContext(ctx context.Context, opts map[string]string) (adbc.DatabaseWithContext, error) {
-	db, err := d.Driver.NewDatabaseWithContext(ctx, opts)
+	options := map[string]string{}
+	db, err := d.Driver.NewDatabaseWithContext(context.WithValue(ctx, databaseOptionsKey{}, options), opts)
 	if err != nil {
 		return nil, err
 	}
-	if err := db.SetOptions(ctx, opts); err != nil {
+	if err := db.SetOptions(ctx, options); err != nil {
 		return nil, errors.Join(err, db.Close(ctx))
 	}
 	return db, nil

@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -76,18 +77,25 @@ func (f *TrinoDBFactory) CreateDB(ctx context.Context, driverName string, opts m
 	if err != nil {
 		return nil, err
 	}
-	externalAuth, tokenCache, err := externalAuthOptions(opts)
+	externalAuth, tokenCache, err := externalAuthOptions(opts, cfg.ExternalAuthentication)
 	if err != nil {
 		return nil, err
+	}
+	if options, ok := ctx.Value(databaseOptionsKey{}).(map[string]string); ok {
+		options[optionExternalAuthentication] = strconv.FormatBool(externalAuth)
+		options[optionTokenCache] = tokenCache
 	}
 	cfg.ExternalAuthentication = externalAuth
-	dsn, err = cfg.FormatDSN()
-	if err != nil {
-		return nil, err
-	}
 	if !externalAuth {
+		dsn, err := cfg.FormatDSN()
+		if err != nil {
+			return nil, err
+		}
 		return sql.Open(driverName, dsn)
 	}
+
+	// A TokenCache cannot be expressed in a DSN, so the database is opened
+	// from a Connector for the configuration parsed above.
 	connector, err := f.externalAuthConnector(cfg, dsn, tokenCache, logger)
 	if err != nil {
 		return nil, err

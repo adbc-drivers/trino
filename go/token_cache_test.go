@@ -115,23 +115,20 @@ func TestExternalAuthOptions(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		opts         map[string]string
+		uriValue     bool
 		externalAuth bool
 		tokenCache   string
 		err          string
 	}{
-		{name: "defaults", opts: map[string]string{adbc.OptionKeyURI: "trino://trino.example.com/memory"}, tokenCache: tokenCacheKeyring},
-		{name: "URI parameter", opts: map[string]string{adbc.OptionKeyURI: "https://trino.example.com?externalAuthentication=true"}, externalAuth: true, tokenCache: tokenCacheKeyring},
-		{name: "option", opts: map[string]string{adbc.OptionKeyURI: "trino://trino.example.com/memory", optionExternalAuthentication: "true", optionTokenCache: tokenCacheMemory}, externalAuth: true, tokenCache: tokenCacheMemory},
-		{name: "option overrides URI", opts: map[string]string{adbc.OptionKeyURI: "trino://trino.example.com/memory?externalAuthentication=true", optionExternalAuthentication: "false"}, tokenCache: tokenCacheKeyring},
+		{name: "defaults", tokenCache: tokenCacheKeyring},
+		{name: "URI parameter", uriValue: true, externalAuth: true, tokenCache: tokenCacheKeyring},
+		{name: "option", opts: map[string]string{optionExternalAuthentication: "true", optionTokenCache: tokenCacheMemory}, externalAuth: true, tokenCache: tokenCacheMemory},
+		{name: "option overrides URI parameter", opts: map[string]string{optionExternalAuthentication: "false"}, uriValue: true, tokenCache: tokenCacheKeyring},
 		{name: "invalid option", opts: map[string]string{optionExternalAuthentication: "maybe"}, err: `invalid value for trino.external_authentication: "maybe"`},
-		{name: "URI without scheme", opts: map[string]string{adbc.OptionKeyURI: "10.0.0.1:8443?catalog=memory&externalAuthentication=true"}, externalAuth: true, tokenCache: tokenCacheKeyring},
-		{name: "URI without scheme, with user", opts: map[string]string{adbc.OptionKeyURI: "alice@trino.example.com:8443"}, tokenCache: tokenCacheKeyring},
-		{name: "invalid URI parameter", opts: map[string]string{adbc.OptionKeyURI: "trino://trino.example.com/memory?externalAuthentication=maybe"}, err: `invalid boolean for externalAuthentication: "maybe"`},
-		{name: "invalid URI", opts: map[string]string{adbc.OptionKeyURI: "trino://trino.example.com:port/memory"}, err: "invalid port"},
 		{name: "invalid token cache", opts: map[string]string{optionTokenCache: "disk"}, err: `invalid value for trino.token_cache: "disk"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			externalAuth, tokenCache, err := externalAuthOptions(tc.opts)
+			externalAuth, tokenCache, err := externalAuthOptions(tc.opts, tc.uriValue)
 			if tc.err != "" {
 				require.ErrorContains(t, err, tc.err)
 				return
@@ -140,6 +137,16 @@ func TestExternalAuthOptions(t *testing.T) {
 			assert.Equal(t, tc.externalAuth, externalAuth)
 			assert.Equal(t, tc.tokenCache, tokenCache)
 		})
+	}
+}
+
+// URIs without a scheme, which BuildTrinoDSN completes, also work with
+// external authentication.
+func TestCreateDBURIWithoutScheme(t *testing.T) {
+	for _, uri := range []string{"10.0.0.1:8443?catalog=memory", "alice@trino.example.com:8443?externalAuthentication=true"} {
+		db, err := NewTrinoDBFactory().CreateDB(context.Background(), "trino", map[string]string{adbc.OptionKeyURI: uri}, nil)
+		require.NoError(t, err, uri)
+		require.NoError(t, db.Close())
 	}
 }
 

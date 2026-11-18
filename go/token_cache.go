@@ -80,24 +80,16 @@ type tokenCache struct {
 var _ trino.TokenCache = (*tokenCache)(nil)
 
 // externalAuthOptions returns whether opts log in through external
-// authentication, and where the token is kept.
-func externalAuthOptions(opts map[string]string) (externalAuth bool, tokenCache string, err error) {
+// authentication, which is uriValue (the externalAuthentication URI
+// parameter) unless the option is set, and where the token is kept.
+func externalAuthOptions(opts map[string]string, uriValue bool) (externalAuth bool, tokenCache string, err error) {
 	tokenCache = cmp.Or(opts[optionTokenCache], tokenCacheKeyring)
 	if tokenCache != tokenCacheKeyring && tokenCache != tokenCacheMemory {
 		return false, "", fmt.Errorf("invalid value for %s: %q (expected %q or %q)", optionTokenCache, tokenCache, tokenCacheKeyring, tokenCacheMemory)
 	}
 	value, ok := opts[optionExternalAuthentication]
 	if !ok {
-		// Read the URI parameter as the client does, from the DSN.
-		dsn, err := (&TrinoDBFactory{}).BuildTrinoDSN(opts)
-		if err != nil {
-			return false, "", err
-		}
-		cfg, err := trino.ParseDSN(dsn)
-		if err != nil {
-			return false, "", err
-		}
-		return cfg.ExternalAuthentication, tokenCache, nil
+		return uriValue, tokenCache, nil
 	}
 	externalAuth, err = strconv.ParseBool(value)
 	if err != nil {
@@ -106,14 +98,14 @@ func externalAuthOptions(opts map[string]string) (externalAuth bool, tokenCache 
 	return externalAuth, tokenCache, nil
 }
 
-// externalAuthConnector returns the Connector for cfg, which keeps its token
-// as tokenCacheMode says. A TokenCache cannot be expressed in a DSN, so the
-// database is opened from a Connector rather than from dsn, which only
-// identifies the configuration. Databases with the same configuration (e.g.
-// the threads of dbt) share the Connector, so that while one logs in, the
-// others wait for its token rather than also opening the browser.
+// externalAuthConnector returns the Connector for cfg, parsed from dsn, which
+// keeps its token as tokenCacheMode says. Databases with the same
+// configuration (e.g. the threads of dbt) share the Connector, so that while
+// one logs in, the others wait for its token rather than also opening the
+// browser. The custom client, which holds the options that are not in dsn
+// (headers, timeouts and TLS), completes the configuration.
 func (f *TrinoDBFactory) externalAuthConnector(cfg *trino.Config, dsn, tokenCacheMode string, logger *slog.Logger) (*trino.Connector, error) {
-	key := tokenCacheMode + "|" + dsn
+	key := tokenCacheMode + "|" + dsn + "|" + cfg.CustomClientName
 	if connector, ok := f.connectors.Load(key); ok {
 		return connector.(*trino.Connector), nil
 	}
