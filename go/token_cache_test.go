@@ -150,6 +150,23 @@ func TestCreateDBURIWithoutScheme(t *testing.T) {
 	}
 }
 
+func TestOpenBrowserOrPrint(t *testing.T) {
+	loginURL, err := url.Parse("https://trino.example.com/oauth2/token/initiate/1")
+	require.NoError(t, err)
+	var out bytes.Buffer
+
+	opened := openBrowserOrPrint(func(context.Context, *url.URL) error { return nil }, &out)
+	require.NoError(t, opened(context.Background(), loginURL))
+	assert.Empty(t, out.String(), "nothing is printed when the browser opens")
+
+	noBrowser := openBrowserOrPrint(func(context.Context, *url.URL) error {
+		return errors.New(`exec: "xdg-open": executable file not found in $PATH`)
+	}, &out)
+	require.NoError(t, noBrowser(context.Background(), loginURL), "the login goes on, through the printed URL")
+	assert.Contains(t, out.String(), "xdg-open")
+	assert.Contains(t, out.String(), "Open this URL in a browser to log in:\n"+loginURL.String())
+}
+
 func TestTokenCacheKeyringChunksLargeTokens(t *testing.T) {
 	k := newMemoryKeyring()
 	const uri = "https://trino.example.com"

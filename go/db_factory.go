@@ -43,7 +43,8 @@ type TrinoDBFactory struct {
 	// keyring keeps the external authentication tokens for other databases
 	// and later processes; nil uses the OS keyring.
 	keyring keyringBackend
-	// redirect sends the user to log in; nil opens the default browser.
+	// redirect sends the user to log in; nil opens the default browser, or
+	// prints the URL when there is none.
 	redirect trino.RedirectHandler
 	// connectors holds a Connector per configuration with external
 	// authentication, and tokenCaches a token cache per server and user.

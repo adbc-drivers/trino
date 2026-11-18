@@ -16,9 +16,13 @@ package trino
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,6 +102,20 @@ func externalAuthOptions(opts map[string]string, uriValue bool) (externalAuth bo
 	return externalAuth, tokenCache, nil
 }
 
+// openBrowserOrPrint returns a RedirectHandler that opens the login URL with
+// open or, when that fails (e.g. on a machine without a browser), prints it
+// to w, for the user to open it in a browser.
+func openBrowserOrPrint(open trino.RedirectHandler, w io.Writer) trino.RedirectHandler {
+	return func(ctx context.Context, redirectURL *url.URL) error {
+		openErr := open(ctx, redirectURL)
+		if openErr == nil {
+			return nil
+		}
+		_, err := fmt.Fprintf(w, "Could not open a browser to log in to Trino (%v).\nOpen this URL in a browser to log in:\n%s\n", openErr, redirectURL)
+		return err
+	}
+}
+
 // externalAuthConnector returns the Connector for cfg, parsed from dsn, which
 // keeps its token as tokenCacheMode says. Databases with the same
 // configuration (e.g. the threads of dbt) share the Connector, so that while
@@ -115,6 +133,9 @@ func (f *TrinoDBFactory) externalAuthConnector(cfg *trino.Config, dsn, tokenCach
 		return nil, err
 	}
 	cfg.RedirectHandler = f.redirect
+	if cfg.RedirectHandler == nil {
+		cfg.RedirectHandler = openBrowserOrPrint(trino.OpenBrowser, os.Stderr)
+	}
 	connector, err := trino.NewConnector(cfg)
 	if err != nil {
 		return nil, err

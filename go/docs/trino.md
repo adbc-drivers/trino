@@ -138,7 +138,7 @@ digits are truncated to nanoseconds.
 `trino.external_authentication`
 : **Type:** boolean. **Default:** `false`. **URI Parameter:** `externalAuthentication`
 
-  Log in through the server's OAuth 2.0 external authentication, opening the browser when the server asks for a login.
+  Log in through the server's OAuth 2.0 external authentication, opening the browser when the server asks for a login. If no browser can be opened, the login URL is printed to standard error, to open it in a browser.
 
 `trino.token_cache`
 : **Type:** string. **Default:** `keyring`.
