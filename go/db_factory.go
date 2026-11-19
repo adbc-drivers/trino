@@ -337,6 +337,7 @@ func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string)
 	if err != nil {
 		return "", fmt.Errorf("invalid Trino URI format: %w", err)
 	}
+	escapeSemicolons(u)
 
 	queryParams := u.Query()
 
@@ -361,6 +362,13 @@ func (f *TrinoDBFactory) parseTrinoURIToDSN(trinoURI, username, password string)
 	}
 
 	return dsn.String(), nil
+}
+
+// escapeSemicolons escapes ";" in the query, which separates entries in
+// options such as session_properties: url.ParseQuery drops any key=value pair
+// that contains an unescaped ";".
+func escapeSemicolons(u *url.URL) {
+	u.RawQuery = strings.ReplaceAll(u.RawQuery, ";", "%3B")
 }
 
 // ensureHostPort handles host and port assignment
@@ -390,6 +398,7 @@ func (f *TrinoDBFactory) buildDSNFromHTTP(baseURI, username, password string) (s
 	if err != nil {
 		return "", fmt.Errorf("invalid DSN format: %w", err)
 	}
+	escapeSemicolons(u)
 
 	u.User = f.applyCredentialOverrides(u.User, username, password)
 
