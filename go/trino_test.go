@@ -1266,3 +1266,23 @@ func TestHTTPHeaderOptions(t *testing.T) {
 		})
 	}
 }
+
+// TestIngestTemporary checks that bulk ingest into a temporary table, which
+// Trino does not have, fails without sending any query.
+func TestIngestTemporary(t *testing.T) {
+	ctx := context.Background()
+	srv := newFakeTrinoServer(t)
+	stmt := openFakeTrino(t, srv, nil)
+
+	schema := arrow.NewSchema([]arrow.Field{{Name: "ints", Type: arrow.PrimitiveTypes.Int64, Nullable: true}}, nil)
+	batch := testutil.RecordFromJSON(t, memory.DefaultAllocator, schema, `[{"ints": 1}]`)
+	defer batch.Release()
+	require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, "foo"))
+	require.NoError(t, stmt.SetOption(ctx, adbc.OptionValueIngestTemporary, adbc.OptionValueEnabled))
+	require.NoError(t, stmt.Bind(ctx, batch))
+	_, err := stmt.ExecuteUpdate(ctx)
+	var adbcErr adbc.Error
+	require.ErrorAs(t, err, &adbcErr)
+	assert.Equal(t, adbc.StatusNotImplemented, adbcErr.Code)
+	assert.Empty(t, srv.queries())
+}
