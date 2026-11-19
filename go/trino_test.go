@@ -1266,3 +1266,23 @@ func TestHTTPHeaderOptions(t *testing.T) {
 		})
 	}
 }
+
+// TestProxy checks that requests go through the proxy set with httpProxy or
+// socksProxy.
+func TestProxy(t *testing.T) {
+	ctx := context.Background()
+	srv := newFakeTrinoServer(t)
+	stmt := openFakeTrino(t, srv, map[string]string{
+		// The host does not resolve, so the query only succeeds through the
+		// proxy, which is the fake server itself.
+		adbc.OptionKeyURI: "http://trino.invalid?httpProxy=" + srv.Listener.Addr().String(),
+	})
+	require.NoError(t, stmt.SetSqlQuery(ctx, "SELECT 1"))
+	_, err := stmt.ExecuteUpdate(ctx)
+	require.NoError(t, err)
+
+	// Nothing listens on the SOCKS proxy's address, so connecting fails there.
+	_, err = trino.NewDriver(memory.NewCheckedAllocator(memory.DefaultAllocator)).NewDatabaseWithContext(ctx,
+		map[string]string{adbc.OptionKeyURI: srv.URL + "?socksProxy=127.0.0.1:1"})
+	require.ErrorContains(t, err, "proxyconnect tcp: dial tcp 127.0.0.1:1")
+}
