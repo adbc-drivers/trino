@@ -40,7 +40,7 @@ from adbc_driver_manager import dbapi
 
 dbapi.connect(
     driver="trino",
-    db_kwargs={"uri": "http://user@localhost:8080?catalog=tcph&schema=tiny"},
+    db_kwargs={"uri": "http://user@localhost:8080?catalog=tpch&schema=tiny"},
 )
 ```
 
@@ -62,6 +62,8 @@ Components:
 - `schema`: Optional (schema within catalog)
 - Query params: Trino connection attributes
 
+The catalog and schema can also be given as `catalog=` and `schema=` query parameters, but not both in the path and as a parameter.
+
 :::{note}
 Reserved characters in URI elements must be URI-encoded. For example, `@` becomes `%40`. If you include a zone ID in an IPv6 address, the `%` character used as the separator must be replaced with `%25`.
 :::
@@ -70,7 +72,7 @@ Reserved characters in URI elements must be URI-encoded. For example, `@` become
 
 HTTP Basic authentication is only supported on encrypted connections over HTTPS.
 
-By default, connections use HTTPS. To connect using HTTP, add `SSL=false` as a query parameter:
+By default, connections use HTTPS. To connect using HTTP, add `SSL=false` as a query parameter (`SSL` takes `true` or `false`, in any case, or `1` or `0`):
 
 - `trino://localhost:8080/catalog?SSL=false` → Uses HTTP on port 8080
 - `trino://localhost/catalog?SSL=false` → Uses HTTP on default port 8080
