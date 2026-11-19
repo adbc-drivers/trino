@@ -1266,3 +1266,75 @@ func TestHTTPHeaderOptions(t *testing.T) {
 		})
 	}
 }
+
+// TestIngestTargetCatalogOnly checks that bulk ingest with a target catalog but
+// no target schema writes to the current schema of that catalog.
+func TestIngestTargetCatalogOnly(t *testing.T) {
+	withQuirks(t, func(q *TrinoQuirks) {
+		ctx := context.Background()
+
+		drv := q.SetupDriver(t)
+		defer q.TearDownDriver(t, drv)
+
+		db, err := drv.NewDatabaseWithContext(ctx, q.DatabaseOptions())
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, db.Close(ctx))
+		}()
+
+		cnxn, err := db.Open(ctx)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, cnxn.Close(ctx))
+		}()
+
+		exec := func(query string) error {
+			stmt, err := cnxn.NewStatement(ctx)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, stmt.Close(ctx)) }()
+			require.NoError(t, stmt.SetSqlQuery(ctx, query))
+			_, err = stmt.ExecuteUpdate(ctx)
+			return err
+		}
+		ingest := func(catalog string, opts map[string]string) error {
+			stmt, err := cnxn.NewStatement(ctx)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, stmt.Close(ctx)) }()
+			schema := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int64}}, nil)
+			batch := testutil.RecordFromJSON(t, q.Alloc(), schema, `[{"x": 1}]`)
+			defer batch.Release()
+			require.NoError(t, stmt.Bind(ctx, batch))
+			require.NoError(t, stmt.SetOption(ctx, adbc.OptionKeyIngestTargetTable, "ingest_catalog_only"))
+			require.NoError(t, stmt.SetOption(ctx, adbc.OptionValueIngestTargetCatalog, catalog))
+			for k, v := range opts {
+				require.NoError(t, stmt.SetOption(ctx, k, v))
+			}
+			_, err = stmt.ExecuteUpdate(ctx)
+			return err
+		}
+
+		for name, opts := range map[string]map[string]string{
+			"dynamic batches": nil,
+			"batch size":      {driverbase.OptionKeyIngestBatchSize: "10"},
+		} {
+			t.Run(name, func(t *testing.T) {
+				defer func() { _ = q.DropTable(cnxn, "memory.default.ingest_catalog_only") }()
+				require.NoError(t, ingest("memory", opts))
+				require.NoError(t, exec("INSERT INTO memory.default.ingest_catalog_only VALUES (2)"))
+			})
+		}
+
+		// For another catalog, a schema with that catalog's name must not be used.
+		require.NoError(t, exec("CREATE SCHEMA memory.ingest_catalog_only_schema"))
+		defer func() { _ = exec("DROP SCHEMA memory.ingest_catalog_only_schema CASCADE") }()
+		var adbcErr adbc.Error
+		require.ErrorAs(t, ingest("ingest_catalog_only_schema", nil), &adbcErr)
+		assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
+		require.Error(t, exec("INSERT INTO memory.ingest_catalog_only_schema.ingest_catalog_only VALUES (2)"))
+
+		// Nor information_schema, after setting just the current catalog.
+		require.NoError(t, cnxn.(adbc.GetSetOptionsWithContext).SetOption(ctx, adbc.OptionKeyCurrentCatalog, "memory"))
+		require.ErrorAs(t, ingest("memory", nil), &adbcErr)
+		assert.Equal(t, adbc.StatusInvalidArgument, adbcErr.Code)
+	})
+}
