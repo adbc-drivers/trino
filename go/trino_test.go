@@ -1266,3 +1266,44 @@ func TestHTTPHeaderOptions(t *testing.T) {
 		})
 	}
 }
+
+// TestGetObjectsOtherCatalog checks that GetObjects lists the schemas, tables
+// and columns of any catalog, not just the session catalog, and works when the
+// connection has no catalog.
+func TestGetObjectsOtherCatalog(t *testing.T) {
+	withQuirks(t, func(q *TrinoQuirks) {
+		ctx := context.Background()
+		u, err := url.Parse(q.dsn)
+		require.NoError(t, err)
+		noCatalog := u.Query()
+		noCatalog.Del("catalog")
+		noCatalog.Del("schema")
+		u.RawQuery = noCatalog.Encode()
+
+		drv := q.SetupDriver(t)
+		defer q.TearDownDriver(t, drv)
+		for name, uri := range map[string]string{"memory catalog": q.dsn, "no catalog": u.String()} {
+			t.Run(name, func(t *testing.T) {
+				db, err := drv.NewDatabaseWithContext(ctx, map[string]string{adbc.OptionKeyURI: uri})
+				require.NoError(t, err)
+				defer func() { require.NoError(t, db.Close(ctx)) }()
+				cnxn, err := db.Open(ctx)
+				require.NoError(t, err)
+				defer func() { require.NoError(t, cnxn.Close(ctx)) }()
+
+				catalog, schema, table := "tpch", "tiny", "nation"
+				reader, err := cnxn.GetObjects(ctx, adbc.ObjectDepthAll, &catalog, &schema, &table, nil, nil)
+				require.NoError(t, err)
+				defer reader.Release()
+				var buf bytes.Buffer
+				for reader.Next() {
+					require.NoError(t, array.RecordToJSON(reader.RecordBatch(), &buf))
+				}
+				require.NoError(t, reader.Err())
+				assert.Contains(t, buf.String(), `"db_schema_name":"tiny"`)
+				assert.Contains(t, buf.String(), `"table_name":"nation"`)
+				assert.Contains(t, buf.String(), `"column_name":"nationkey"`)
+			})
+		}
+	})
+}

@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/adbc-drivers/driverbase-go/driverbase"
@@ -64,7 +65,7 @@ func (c *trinoConnectionImpl) GetDBSchemasForCatalog(ctx context.Context, catalo
 	// In Trino, schemas are namespaces within catalogs (e.g., memory.default, hive.warehouse)
 	// Build query using strings.Builder
 	var queryBuilder strings.Builder
-	queryBuilder.WriteString("SELECT schema_name FROM information_schema.schemata WHERE catalog_name = ?")
+	fmt.Fprintf(&queryBuilder, "SELECT schema_name FROM %s.information_schema.schemata WHERE catalog_name = ?", quoteIdentifier(catalog))
 	args := []any{catalog}
 
 	if schemaFilter != nil {
@@ -110,12 +111,12 @@ func (c *trinoConnectionImpl) getTablesOnly(ctx context.Context, catalog string,
 	// In Trino, both catalog and schema are used to identify tables
 	// Build query using strings.Builder
 	var queryBuilder strings.Builder
-	queryBuilder.WriteString(`
+	fmt.Fprintf(&queryBuilder, `
 		SELECT
 			table_name,
 			table_type
-		FROM information_schema.tables
-		WHERE table_catalog = ? AND table_schema = ?`)
+		FROM %s.information_schema.tables
+		WHERE table_catalog = ? AND table_schema = ?`, quoteIdentifier(catalog))
 
 	args := []any{catalog, schema}
 
@@ -170,7 +171,7 @@ func (c *trinoConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 	}
 
 	var queryBuilder strings.Builder
-	queryBuilder.WriteString(`
+	fmt.Fprintf(&queryBuilder, `
 		SELECT
 			t.table_name,
 			t.table_type,
@@ -180,12 +181,12 @@ func (c *trinoConnectionImpl) getTablesWithColumns(ctx context.Context, catalog 
 			c.data_type,
 			c.is_nullable,
 			c.column_default
-		FROM information_schema.tables t
-		INNER JOIN information_schema.columns c
+		FROM %[1]s.information_schema.tables t
+		INNER JOIN %[1]s.information_schema.columns c
 			ON t.table_catalog = c.table_catalog
 			AND t.table_schema = c.table_schema
 			AND t.table_name = c.table_name
-		WHERE t.table_catalog = ? AND t.table_schema = ?`)
+		WHERE t.table_catalog = ? AND t.table_schema = ?`, quoteIdentifier(catalog))
 
 	args := []any{catalog, schema}
 
