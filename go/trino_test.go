@@ -258,7 +258,7 @@ func (q *TrinoQuirks) GetMetadata(code adbc.InfoCode) any {
 	case adbc.InfoDriverVersion:
 		return "(unknown or development build)"
 	case adbc.InfoDriverArrowVersion:
-		return "v18.8.0"
+		return "v18.9.0"
 	case adbc.InfoVendorVersion:
 		return regexp.MustCompile(`Trino [0-9]+`)
 	case adbc.InfoVendorArrowVersion:
